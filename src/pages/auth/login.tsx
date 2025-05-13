@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -41,17 +42,26 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
-            Entre na sua conta
+    <div className="min-h-screen bg-[#121212] flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-[#1E1E1E] p-8 rounded-xl shadow-lg border border-gray-800">
+        <div className="text-center">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] flex items-center justify-center">
+              <span className="text-white text-2xl font-bold">D</span>
+            </div>
+          </div>
+          <h2 className="text-3xl font-extrabold text-white">
+            Bem-vindo ao Din-Din
           </h2>
+          <p className="mt-2 text-sm text-gray-400">
+            Entre com sua conta para continuar
+          </p>
         </div>
+        
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
                 Email
               </label>
               <input
@@ -59,14 +69,14 @@ export default function Login() {
                 name="email"
                 type="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-700 placeholder-gray-500 text-white bg-gray-800 rounded-t-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="Email"
+                className="appearance-none relative block w-full px-3 py-3 border border-gray-700 rounded-lg placeholder-gray-500 text-white bg-gray-800 focus:outline-none focus:ring-[#3bc37a] focus:border-[#3bc37a] focus:z-10 sm:text-sm"
+                placeholder="Seu email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
                 Senha
               </label>
               <input
@@ -74,8 +84,8 @@ export default function Login() {
                 name="password"
                 type="password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-700 placeholder-gray-500 text-white bg-gray-800 rounded-b-md focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="Senha"
+                className="appearance-none relative block w-full px-3 py-3 border border-gray-700 rounded-lg placeholder-gray-500 text-white bg-gray-800 focus:outline-none focus:ring-[#3bc37a] focus:border-[#3bc37a] focus:z-10 sm:text-sm"
+                placeholder="Sua senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -83,23 +93,25 @@ export default function Login() {
           </div>
 
           {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
+            <div className="p-3 rounded-lg bg-red-900/30 border border-red-800 text-red-400 text-sm">
+              {error}
+            </div>
           )}
 
           <div>
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-green-800 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#3bc37a] disabled:opacity-70 disabled:cursor-not-allowed transition-all duration-200"
             >
               {isLoading ? 'Entrando...' : 'Entrar'}
             </button>
           </div>
 
-          <div className="text-center">
+          <div className="text-center pt-4 border-t border-gray-800">
             <Link
               href="/auth/register"
-              className="font-medium text-green-500 hover:text-green-400"
+              className="font-medium text-[#3bc37a] hover:text-[#4dd38b] transition-colors"
             >
               Não tem uma conta? Registre-se
             </Link>
