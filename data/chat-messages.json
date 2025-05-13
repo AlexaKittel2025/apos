@@ -1,0 +1,44 @@
+[
+  {
+    "id": "6jvdohpcqy5wbhounf2i6d",
+    "text": "Boa noite",
+    "sender": "USER",
+    "userId": "cmamfx1y90000wkzggikldf9e",
+    "userName": "alexa p",
+    "userEmail": "alexa@alexa.com",
+    "recipientId": null,
+    "timestamp": "2025-05-13T21:38:57.765Z",
+    "read": true,
+    "isImage": false,
+    "fileInfo": null,
+    "expiresAt": "2025-05-14T21:38:57.765Z"
+  },
+  {
+    "id": "128024idc0qlhs5ptn94mt",
+    "text": "Olá boa noite!",
+    "sender": "ADMIN",
+    "userId": "cmamh302n00009p50wtb7dsca",
+    "userName": "Financeiro",
+    "userEmail": "financeiro@pedirsanto.com",
+    "recipientId": "cmamfx1y90000wkzggikldf9e",
+    "timestamp": "2025-05-13T21:39:06.133Z",
+    "read": false,
+    "isImage": false,
+    "fileInfo": null,
+    "expiresAt": "2025-05-14T21:39:06.133Z"
+  },
+  {
+    "id": "df99jctp3tiav1jfef4uj8",
+    "text": "Ok",
+    "sender": "USER",
+    "userId": "cmamfx1y90000wkzggikldf9e",
+    "userName": "alexa p",
+    "userEmail": "alexa@alexa.com",
+    "recipientId": null,
+    "timestamp": "2025-05-13T21:42:47.996Z",
+    "read": true,
+    "isImage": false,
+    "fileInfo": null,
+    "expiresAt": "2025-05-14T21:42:47.996Z"
+  }
+]

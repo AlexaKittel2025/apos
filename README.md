@@ -90,6 +90,45 @@ src/
 3. Visualize estatísticas do jogo
 4. Ajuste o lucro da casa
 
+## Melhorias no Sistema de Chat
+
+As seguintes correções e otimizações foram aplicadas para resolver o problema de loop infinito de requisições ao servidor:
+
+### 1. Painel de Admin (`src/pages/admin/index.tsx`)
+
+- Adicionada verificação de `document.visibilityState` para evitar requisições desnecessárias quando a página não está visível
+- Implementada variável `isUpdating` para prevenir chamadas recursivas e simultâneas à API
+- Aumentado o intervalo entre atualizações de 10 para 15 segundos
+- Adicionada finalização adequada de requisições com `.finally()` para garantir a liberação do bloqueio
+
+### 2. Perfil do Usuário (`src/app/profile/page.tsx`)
+
+- Adicionado listener de evento `visibilitychange` para atualizar apenas quando a página está visível
+- Modificada a função `fetchChatMessages` para retornar Promise e permitir controle de finalização
+- Implementada verificação para evitar requisições redundantes
+- Aumentado o intervalo entre atualizações de 5 para 15 segundos
+- Adicionada filtragem de mensagens do lado do cliente para reduzir processamento
+
+### 3. API de Mensagens (`src/pages/api/chat/messages.ts`)
+
+- Otimizada a filtragem de mensagens para evitar loops desnecessários
+- Removidos logs verbosos que geravam sobrecarga no servidor
+- Melhorada a lógica de marcação de mensagens como lidas, processando apenas mensagens não lidas
+- Implementado processamento por lotes para melhorar performance
+
+### 4. API de Usuários (`src/pages/api/chat/users.ts`)
+
+- Adicionado sistema de cache para reduzir processamento repetitivo
+- Implementada filtragem apenas das mensagens recentes (últimas 100) para verificar novas mensagens
+- Removidos usuários simulados desnecessários que causavam confusão
+- Aplicada limpeza de mensagens antigas antes do processamento
+
+Estas melhorias combinadas resultaram em:
+- Redução significativa no número de chamadas à API
+- Eliminação de loops infinitos
+- Melhor experiência para usuários e administradores
+- Menor carga no servidor e no banco de dados
+
 ## Contribuição
 
 1. Faça um fork do projeto

@@ -18,12 +18,24 @@ export default async function handler(
   if (req.method === 'POST') {
     try {
       console.log('Solicitação de transação recebida:', req.body);
-      const { amount, type } = req.body;
+      const { amount, type, pixKey, method } = req.body;
 
+      // Validações mais robustas
       if (!amount || !type) {
         return res.status(400).json({ message: 'Dados incompletos. Informe valor e tipo da transação.' });
       }
 
+      // Converter amount para número caso seja string
+      const numericAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+      
+      if (isNaN(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Valor da transação inválido.' });
+      }
+
+      if (!['DEPOSIT', 'WITHDRAWAL'].includes(type)) {
+        return res.status(400).json({ message: 'Tipo de transação inválido. Use DEPOSIT ou WITHDRAWAL.' });
+      }
+      
       console.log('Buscando usuário:', session.user.id);
       const user = await prisma.user.findUnique({
         where: { id: session.user.id },
@@ -33,45 +45,73 @@ export default async function handler(
         return res.status(404).json({ message: 'Usuário não encontrado' });
       }
 
-      if (type === 'WITHDRAWAL' && user.balance < amount) {
+      if (type === 'WITHDRAWAL' && user.balance < numericAmount) {
         return res.status(400).json({ message: 'Saldo insuficiente para este saque' });
+      }
+
+      // Definir status de acordo com o tipo de transação
+      const status = type === 'WITHDRAWAL' ? 'PENDING' : 'COMPLETED';
+      
+      // Preparar os detalhes da transação de forma mais segura
+      let detailsString = "{}";
+      try {
+        const detailsObj = {
+          pixKey: pixKey || '',
+          method: method || 'pix'
+        };
+        detailsString = JSON.stringify(detailsObj);
+      } catch (error) {
+        console.error('Erro ao serializar detalhes da transação:', error);
+        // Usar objeto vazio em caso de erro
+        detailsString = "{}";
       }
 
       console.log('Criando transação...');
       const transaction = await prisma.transaction.create({
         data: {
-          amount,
+          amount: numericAmount,
           type,
+          status,
           userId: user.id,
+          details: detailsString
         },
       });
 
+      console.log('Transação criada com sucesso, ID:', transaction.id);
       console.log('Atualizando saldo do usuário...');
-      if (type === 'DEPOSIT') {
+      
+      // Para saques, sempre debitar imediatamente
+      if (type === 'WITHDRAWAL') {
         await prisma.user.update({
           where: { id: user.id },
           data: {
             balance: {
-              increment: amount,
+              decrement: numericAmount,
             },
           },
         });
-      } else if (type === 'WITHDRAWAL') {
+        console.log(`Saldo debitado: -${numericAmount}, novo saldo: ${user.balance - numericAmount}`);
+      } 
+      // Para depósitos, creditar imediatamente
+      else if (type === 'DEPOSIT') {
         await prisma.user.update({
           where: { id: user.id },
           data: {
             balance: {
-              decrement: amount,
+              increment: numericAmount,
             },
           },
         });
+        console.log(`Saldo creditado: +${numericAmount}, novo saldo: ${user.balance + numericAmount}`);
       }
 
       console.log('Transação concluída com sucesso:', transaction.id);
       return res.status(201).json(transaction);
     } catch (error) {
       console.error('Erro ao criar transação:', error);
-      return res.status(500).json({ message: 'Erro interno do servidor' });
+      // Retornar mais detalhes sobre o erro para facilitar o diagnóstico
+      const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
+      return res.status(500).json({ message: errorMessage });
     }
   }
 
@@ -81,17 +121,20 @@ export default async function handler(
       const transactions = await prisma.transaction.findMany({
         where: {
           userId: session.user.id,
+          type: {
+            in: ['DEPOSIT', 'WITHDRAWAL'] // Retornar apenas depósitos e saques, não apostas
+          }
         },
         orderBy: {
           createdAt: 'desc',
         },
-        take: 10,
       });
 
       return res.status(200).json(transactions);
     } catch (error) {
       console.error('Erro ao buscar transações:', error);
-      return res.status(500).json({ message: 'Erro interno do servidor' });
+      const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
+      return res.status(500).json({ message: errorMessage });
     }
   }
 

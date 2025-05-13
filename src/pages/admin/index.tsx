@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/router';
+import ChatSupport from '@/components/ChatSupport';
 
 interface GameStats {
   totalBets: number;
@@ -21,6 +22,25 @@ interface User {
   balance: number;
 }
 
+// Definir interface para mensagens
+interface MessageType {
+  id?: string;
+  text: string;
+  sender: 'USER' | 'ADMIN' | 'SYSTEM';
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  recipientId?: string | null;
+  timestamp: Date | string;
+  read?: boolean;
+  isFinal?: boolean;
+  isImage?: boolean;
+  fileInfo?: {
+    originalName: string;
+    url: string;
+  };
+}
+
 export default function AdminPanel() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -34,8 +54,53 @@ export default function AdminPanel() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   
+  // Dados para as abas de Saques e Depósitos
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [deposits, setDeposits] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState<string | null>(null);
+  
+  // Adicionar contador de jogadores online
+  const [playerCount, setPlayerCount] = useState(0);
+  
   // Tabs de navegação
-  const [activeTab, setActiveTab] = useState('stats'); // 'stats', 'recharge', 'house-profit'
+  const [activeTab, setActiveTab] = useState('stats'); // 'stats', 'recharge', 'house-profit', 'withdrawals', 'deposits', 'chat'
+  
+  // Estado para modal de detalhes da transação
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  
+  // Estado para rastrear o usuário selecionado no chat
+  const [selectedChatUser, setSelectedChatUser] = useState<string | undefined>(undefined);
+  
+  // Função para extrair detalhes da transação
+  const getTransactionDetails = (transaction: any) => {
+    if (!transaction?.details) return { pixKey: 'Não informado', method: 'Não informado' };
+    
+    try {
+      let details = {};
+      
+      if (typeof transaction.details === 'string') {
+        details = JSON.parse(transaction.details);
+      } else if (typeof transaction.details === 'object') {
+        details = transaction.details;
+      }
+      
+      const pixKey = (details as any)?.pixKey || 'Não informado';
+      const methodName = (details as any)?.method || 'pixWithdraw';
+      
+      const formattedMethod = methodName === 'pixWithdraw' 
+        ? 'PIX' 
+        : methodName === 'bankAccount' 
+          ? 'Conta Bancária' 
+          : methodName;
+      
+      return { pixKey, method: formattedMethod };
+    } catch (error) {
+      console.error('Erro ao analisar detalhes da transação:', error);
+      return { pixKey: 'Erro ao processar', method: 'Erro ao processar' };
+    }
+  };
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -46,7 +111,50 @@ export default function AdminPanel() {
     }
 
     fetchStats();
+    
+    // Conectar ao socket para receber atualizações de jogadores online
+    const connectToSocket = async () => {
+      try {
+        // Garantir que a API de socket está inicializada
+        await fetch('/api/socket');
+        
+        // Importar Socket.IO dinamicamente
+        const { io } = await import('socket.io-client');
+        const socket = io();
+        
+        // Receber contagem de jogadores
+        socket.on('playerCount', (count: number) => {
+          console.log('Jogadores conectados:', count);
+          setPlayerCount(count);
+        });
+        
+        // Limpar ao desmontar
+        return () => {
+          socket.off('playerCount');
+          socket.disconnect();
+        };
+      } catch (error) {
+        console.error('Erro ao conectar ao socket:', error);
+      }
+    };
+    
+    // Iniciar conexão com o socket
+    const cleanupSocket = connectToSocket();
+    
+    // Limpar ao desmontar
+    return () => {
+      cleanupSocket.then(cleanup => cleanup && cleanup());
+    };
   }, [session, status]);
+
+  // Adicionar um efeito para carregar transações quando a aba for selecionada
+  useEffect(() => {
+    if (activeTab === 'withdrawals') {
+      fetchWithdrawals();
+    } else if (activeTab === 'deposits') {
+      fetchDeposits();
+    }
+  }, [activeTab]);
 
   const fetchStats = async () => {
     try {
@@ -60,6 +168,67 @@ export default function AdminPanel() {
       setLoading(false);
     } catch (error) {
       console.error('Erro ao buscar estatísticas:', error);
+      setLoading(false);
+    }
+  };
+
+  const fetchWithdrawals = async () => {
+    try {
+      setLoadingTransactions(true);
+      const response = await fetch('/api/admin/transactions?type=WITHDRAWAL');
+      if (response.ok) {
+        const data = await response.json();
+        setWithdrawals(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar saques:', error);
+      setErrorMessage('Erro ao carregar saques');
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const fetchDeposits = async () => {
+    try {
+      setLoadingTransactions(true);
+      const response = await fetch('/api/admin/transactions?type=DEPOSIT');
+      if (response.ok) {
+        const data = await response.json();
+        setDeposits(data);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar depósitos:', error);
+      setErrorMessage('Erro ao carregar depósitos');
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const updateWithdrawalStatus = async (transactionId: string, status: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/admin/transactions/update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transactionId,
+          status
+        }),
+      });
+
+      if (response.ok) {
+        fetchWithdrawals();
+        setSuccessMessage('Status do saque atualizado com sucesso');
+      } else {
+        const error = await response.json();
+        setErrorMessage(error.message || 'Erro ao atualizar status');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      setErrorMessage('Erro ao atualizar status');
+    } finally {
       setLoading(false);
     }
   };
@@ -154,6 +323,12 @@ export default function AdminPanel() {
     }
   };
 
+  // Função para abrir o modal de detalhes
+  const openTransactionDetails = (transaction: any) => {
+    setSelectedTransaction(transaction);
+    setShowDetailsModal(true);
+  };
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
@@ -163,40 +338,58 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Painel Administrativo</h1>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] bg-clip-text text-transparent">Painel Administrativo</h1>
           <div className="text-sm">
-            Logado como: <span className="text-green-400">{session?.user?.email}</span>
+            Logado como: <span className="text-[#3bc37a]">{session?.user?.email}</span>
           </div>
         </div>
 
         {/* Navegação por tabs */}
-        <div className="flex border-b border-gray-700 mb-8">
+        <div className="flex border-b border-gray-800 mb-8">
           <button
-            className={`px-4 py-2 ${activeTab === 'stats' ? 'text-green-500 border-b-2 border-green-500' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 ${activeTab === 'stats' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setActiveTab('stats')}
           >
             Estatísticas
           </button>
           <button
-            className={`px-4 py-2 ${activeTab === 'recharge' ? 'text-green-500 border-b-2 border-green-500' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 ${activeTab === 'recharge' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setActiveTab('recharge')}
           >
             Recarga de Saldo
           </button>
           <button
-            className={`px-4 py-2 ${activeTab === 'house-profit' ? 'text-green-500 border-b-2 border-green-500' : 'text-gray-400 hover:text-white'}`}
+            className={`px-4 py-2 ${activeTab === 'house-profit' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setActiveTab('house-profit')}
           >
             Lucro da Casa
+          </button>
+          <button
+            className={`px-4 py-2 ${activeTab === 'withdrawals' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setActiveTab('withdrawals')}
+          >
+            Saques
+          </button>
+          <button
+            className={`px-4 py-2 ${activeTab === 'deposits' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setActiveTab('deposits')}
+          >
+            Depósitos
+          </button>
+          <button
+            className={`px-4 py-2 ${activeTab === 'chat' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            Chat
           </button>
         </div>
 
         {/* Mensagens de sucesso ou erro */}
         {successMessage && (
-          <div className="bg-green-500 bg-opacity-20 border border-green-500 text-green-300 px-4 py-2 rounded-lg mb-4">
+          <div className="bg-[#3bc37a] bg-opacity-20 border border-[#3bc37a] text-[#3bc37a] px-4 py-2 rounded-lg mb-4">
             {successMessage}
           </div>
         )}
@@ -210,7 +403,7 @@ export default function AdminPanel() {
         {/* Conteúdo da aba Estatísticas */}
         {activeTab === 'stats' && stats && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-gray-800 p-6 rounded-lg">
                 <h2 className="text-xl font-semibold mb-2">Total de Apostas</h2>
                 <p className="text-3xl font-bold text-green-500">
@@ -230,6 +423,22 @@ export default function AdminPanel() {
                 <p className="text-3xl font-bold text-green-500">
                   R$ {stats.houseProfit?.toFixed(2) || '0.00'}
                 </p>
+              </div>
+              
+              <div className="bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] bg-opacity-20 p-6 rounded-lg">
+                <h2 className="text-xl font-semibold mb-2">Jogadores Online</h2>
+                <div className="flex items-center">
+                  <p className="text-3xl font-bold text-white">
+                    {playerCount}
+                  </p>
+                  <div className="ml-3 flex items-center">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    <span className="ml-2 text-sm text-gray-300">ao vivo</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -395,6 +604,264 @@ export default function AdminPanel() {
             </div>
           </div>
         )}
+
+        {/* Conteúdo da aba Saques */}
+        {activeTab === 'withdrawals' && (
+          <div className="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-semibold mb-4">Gerenciamento de Saques</h2>
+            
+            {loadingTransactions ? (
+              <div className="text-center py-8">Carregando saques...</div>
+            ) : withdrawals.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Nenhum saque encontrado</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">ID</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Usuário</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Data</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Método</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Chave/Dados</th>
+                      <th className="px-4 py-3 text-right text-sm text-gray-400">Valor</th>
+                      <th className="px-4 py-3 text-center text-sm text-gray-400">Status</th>
+                      <th className="px-4 py-3 text-right text-sm text-gray-400">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {withdrawals.map((withdrawal) => {
+                      const { pixKey, method } = getTransactionDetails(withdrawal);
+                      return (
+                        <tr key={withdrawal.id} className="border-b border-gray-700 hover:bg-gray-700 cursor-pointer" onClick={() => openTransactionDetails(withdrawal)}>
+                          <td className="px-4 py-3 text-sm">{withdrawal.id.substring(0, 8)}...</td>
+                          <td className="px-4 py-3 text-sm">{withdrawal.user?.email || 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm">{new Date(withdrawal.createdAt).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-sm">{method}</td>
+                          <td className="px-4 py-3 text-sm">{pixKey}</td>
+                          <td className="px-4 py-3 text-sm text-red-400 text-right">R$ {withdrawal.amount.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm text-center">
+                            <span 
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                withdrawal.status === 'COMPLETED' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : withdrawal.status === 'REJECTED'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}
+                            >
+                              {withdrawal.status === 'COMPLETED' 
+                                ? 'Concluído' 
+                                : withdrawal.status === 'REJECTED'
+                                ? 'Rejeitado'
+                                : 'Pendente'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right" onClick={(e) => e.stopPropagation()}>
+                            {withdrawal.status === 'PENDING' && (
+                              <div className="flex justify-end space-x-2">
+                                <button
+                                  onClick={() => updateWithdrawalStatus(withdrawal.id, 'COMPLETED')}
+                                  className="px-2 py-1 bg-green-600 text-xs rounded hover:bg-green-700"
+                                  disabled={loading}
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  onClick={() => updateWithdrawalStatus(withdrawal.id, 'REJECTED')}
+                                  className="px-2 py-1 bg-red-600 text-xs rounded hover:bg-red-700"
+                                  disabled={loading}
+                                >
+                                  Rejeitar
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Conteúdo da aba Depósitos */}
+        {activeTab === 'deposits' && (
+          <div className="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-semibold mb-4">Gerenciamento de Depósitos</h2>
+            
+            {loadingTransactions ? (
+              <div className="text-center py-8">Carregando depósitos...</div>
+            ) : deposits.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">Nenhum depósito encontrado</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">ID</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Usuário</th>
+                      <th className="px-4 py-3 text-left text-sm text-gray-400">Data</th>
+                      <th className="px-4 py-3 text-right text-sm text-gray-400">Valor</th>
+                      <th className="px-4 py-3 text-center text-sm text-gray-400">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deposits.map((deposit) => (
+                      <tr key={deposit.id} className="border-b border-gray-700">
+                        <td className="px-4 py-3 text-sm">{deposit.id.substring(0, 8)}...</td>
+                        <td className="px-4 py-3 text-sm">{deposit.user?.email || 'N/A'}</td>
+                        <td className="px-4 py-3 text-sm">{new Date(deposit.createdAt).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-green-400 text-right">R$ {deposit.amount.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Concluído
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Conteúdo da aba 'chat' */}
+        {activeTab === 'chat' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Chat de Suporte</h2>
+            <div className="bg-[#121212] p-6 rounded-lg shadow-xl">
+              <ChatSupport 
+                isAdmin={true} 
+                selectedUserId={selectedChatUser}
+                onUserChange={setSelectedChatUser}
+                title="Painel de Suporte"
+                height="600px"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      
+      {/* Modal de Detalhes da Transação */}
+      <div
+        className={`fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-70 transition-all duration-200 ${showDetailsModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setShowDetailsModal(false)}
+      >
+        <div className="bg-gray-800 rounded-lg shadow-xl max-w-lg w-full border border-gray-700" onClick={e => e.stopPropagation()}>
+          <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+            <h3 className="text-lg font-medium">Detalhes do Saque</h3>
+            <button 
+              onClick={() => setShowDetailsModal(false)} 
+              className="text-gray-400 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div className="p-6">
+            {selectedTransaction && (
+              <div className="space-y-4">
+                <div className="bg-gray-700 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium mb-3">Informações Gerais</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-sm text-gray-400">ID da Transação</p>
+                      <p className="font-medium break-all">{selectedTransaction.id}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-400">Data/Hora</p>
+                      <p className="font-medium">{new Date(selectedTransaction.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-400">Valor</p>
+                      <p className="font-medium text-red-400">R$ {selectedTransaction.amount.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-400">Status</p>
+                      <p className={`font-medium ${
+                        selectedTransaction.status === 'COMPLETED' 
+                          ? 'text-green-400' 
+                          : selectedTransaction.status === 'REJECTED'
+                          ? 'text-red-400'
+                          : 'text-yellow-400'
+                      }`}>
+                        {selectedTransaction.status === 'COMPLETED' 
+                          ? 'Concluído' 
+                          : selectedTransaction.status === 'REJECTED'
+                          ? 'Rejeitado'
+                          : 'Pendente'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-gray-700 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium mb-3">Dados do Usuário</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <p className="text-sm text-gray-400">Nome</p>
+                      <p className="font-medium">{selectedTransaction.user?.name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-400">Email</p>
+                      <p className="font-medium">{selectedTransaction.user?.email || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-gray-700 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium mb-3">Dados do Saque</h3>
+                  {(() => {
+                    const { pixKey, method } = getTransactionDetails(selectedTransaction);
+                    return (
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <p className="text-sm text-gray-400">Método</p>
+                          <p className="font-medium">{method}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-400">Chave PIX / Dados Bancários</p>
+                          <p className="font-medium break-all">{pixKey}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+                
+                {selectedTransaction.status === 'PENDING' && (
+                  <div className="flex justify-end space-x-3 mt-6">
+                    <button
+                      onClick={() => {
+                        updateWithdrawalStatus(selectedTransaction.id, 'REJECTED');
+                        setShowDetailsModal(false);
+                      }}
+                      className="px-4 py-2 bg-red-600 rounded hover:bg-red-700"
+                      disabled={loading}
+                    >
+                      Rejeitar Saque
+                    </button>
+                    <button
+                      onClick={() => {
+                        updateWithdrawalStatus(selectedTransaction.id, 'COMPLETED');
+                        setShowDetailsModal(false);
+                      }}
+                      className="px-4 py-2 bg-green-600 rounded hover:bg-green-700"
+                      disabled={loading}
+                    >
+                      Aprovar Saque
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -9,11 +9,12 @@ import { useRouter } from 'next/navigation';
 import { useBalance } from '@/lib/BalanceContext';
 import Image from 'next/image';
 import { io, Socket } from 'socket.io-client';
+import ChatSupport from '@/components/ChatSupport';
 
 // Constantes de segurança (espelhando os valores do servidor)
 const MIN_BET_AMOUNT = 5;      // Aposta mínima: R$ 5,00
 const MAX_BET_AMOUNT = 1000;   // Aposta máxima: R$ 1000,00
-const DAILY_BET_LIMIT = 5000;  // Limite diário: R$ 5000,00
+const DAILY_BET_LIMIT = 15000;  // Limite diário: R$ 15000,00
 const WIN_MULTIPLIER = 1.8;    // Multiplicador de ganho: 1.8x
 
 // Variável global para armazenar a única instância do socket
@@ -55,6 +56,9 @@ export default function NovaInterface() {
   
   // Simulação de apostas rápidas
   const QUICK_BETS = [5, 10, 20, 50, 100];
+
+  // Estado para modal de recarga
+  const [showChatModal, setShowChatModal] = useState(false);
 
   // Redirecionar se não estiver autenticado
   useEffect(() => {
@@ -444,15 +448,9 @@ export default function NovaInterface() {
         {/* Área principal do jogo */}
         <Card variant="bordered" className="md:col-span-2">
           <CardHeader>
-            <div className="flex justify-between">
-              <div>
-                <CardTitle>Jogo ao Vivo</CardTitle>
-                <CardDescription>Faça suas apostas e acompanhe os resultados</CardDescription>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-400">Jogadores online</p>
-                <p className="font-medium">{playerCount}</p>
-              </div>
+            <div>
+              <CardTitle>Jogo ao Vivo</CardTitle>
+              <CardDescription>Faça suas apostas e acompanhe os resultados</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -589,7 +587,7 @@ export default function NovaInterface() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-wrap justify-between gap-2">
-              <Button variant="primary" onClick={() => router.push('/profile')}>
+              <Button variant="primary" onClick={() => setShowChatModal(true)}>
                 Recarregar
               </Button>
               <Button variant="secondary" onClick={() => router.push('/profile')}>
@@ -602,24 +600,33 @@ export default function NovaInterface() {
           <Card variant="bordered">
             <CardHeader>
               <CardTitle>Apostas Atuais</CardTitle>
-              <CardDescription>Apostas da rodada atual</CardDescription>
+              <CardDescription>Sua aposta na rodada atual</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="max-h-40 overflow-y-auto">
-                {bets.length > 0 ? (
-                  <ul className="space-y-3">
-                    {bets.map((bet) => (
-                      <li key={bet.id} className="flex justify-between items-center border-b border-gray-800 pb-2">
-                        <span>{renderPlayerName(bet.playerId || bet.userId, bet.playerName)}</span>
-                        <div className={`inline-flex items-center ${bet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
-                          {bet.type === 'ABOVE' ? '↑' : '↓'} 
-                          <span className="ml-1 font-medium">R$ {bet.amount}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                {myBet ? (
+                  <div className="py-4 flex justify-between items-center">
+                    <span className="font-medium">Sua aposta</span>
+                    <div className={`inline-flex items-center ${myBet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
+                      {myBet.type === 'ABOVE' ? '↑ ACIMA' : '↓ ABAIXO'} 
+                      <span className="ml-2 font-medium">R$ {myBet.amount.toFixed(2)}</span>
+                    </div>
+                  </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-6">Nenhuma aposta realizada</p>
+                  bets.some(bet => bet.playerId === session?.user?.id || bet.userId === session?.user?.id) ? (
+                    // Encontrar e exibir a aposta do usuário atual se estiver nos bets
+                    bets.filter(bet => bet.playerId === session?.user?.id || bet.userId === session?.user?.id).map((bet) => (
+                      <div key={bet.id} className="py-4 flex justify-between items-center">
+                        <span className="font-medium">Sua aposta</span>
+                        <div className={`inline-flex items-center ${bet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
+                          {bet.type === 'ABOVE' ? '↑ ACIMA' : '↓ ABAIXO'} 
+                          <span className="ml-2 font-medium">R$ {bet.amount.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-center py-6">Você ainda não apostou nesta rodada</p>
+                  )
                 )}
               </div>
             </CardContent>
@@ -628,35 +635,52 @@ export default function NovaInterface() {
           {/* Chat */}
           <Card variant="bordered">
             <CardHeader>
-              <CardTitle>Chat ao Vivo</CardTitle>
-              <CardDescription>Converse com outros jogadores</CardDescription>
+              <CardTitle>Chat de Suporte</CardTitle>
+              <CardDescription>Entre em contato com nosso suporte</CardDescription>
             </CardHeader>
             <CardContent>
-              <div ref={chatAreaRef} className="h-48 overflow-y-auto mb-4 space-y-3 px-2">
-                {chatMessages.length > 0 ? (
-                  chatMessages.map((msg, index) => (
-                    <div key={index} className="flex gap-2">
-                      <span className="font-medium">{renderPlayerName(msg.playerId || msg.userId, msg.playerName)}</span>
-                      <span className="text-gray-300">{msg.message}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500 italic text-center py-6">Seja o primeiro a enviar uma mensagem!</p>
-                )}
-              </div>
-              
-              <form onSubmit={sendChatMessage} className="flex gap-2">
-                <Input
-                  placeholder="Digite sua mensagem..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                />
-                <Button type="submit" disabled={!chatInput.trim() || !socket?.connected}>
-                  Enviar
-                </Button>
-              </form>
+              <ChatSupport 
+                isAdmin={false}
+                height="300px"
+              />
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      {/* Modal de Chat para Recarga */}
+      <div
+        className={`fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-70 transition-all duration-200 ${showChatModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setShowChatModal(false)}
+      >
+        <div
+          className="bg-[#121212] rounded-lg shadow-xl max-w-4xl w-full border border-gray-800"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+            <h3 className="text-lg font-medium">Chat de Suporte - Realizar Depósito</h3>
+            <button
+              onClick={() => setShowChatModal(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div className="p-6">
+            <ChatSupport 
+              isAdmin={false} 
+              title="Chat de Suporte - Realizar Depósito"
+              height="400px"
+              autoFocus={true}
+            />
+            <div className="mt-6 text-sm text-gray-400">
+              <p>Entre em contato com nosso suporte para receber instruções de depósito e enviar comprovantes.</p>
+              <p className="mt-2">Nosso atendimento está disponível das 8h às 22h todos os dias.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
