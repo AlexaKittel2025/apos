@@ -1,0 +1,654 @@
+'use client';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { useRouter } from 'next/navigation';
+import { useBalance } from '@/lib/BalanceContext';
+import Image from 'next/image';
+import { io, Socket } from 'socket.io-client';
+
+// Constantes de segurança (espelhando os valores do servidor)
+const MIN_BET_AMOUNT = 5;      // Aposta mínima: R$ 5,00
+const MAX_BET_AMOUNT = 1000;   // Aposta máxima: R$ 1000,00
+const DAILY_BET_LIMIT = 5000;  // Limite diário: R$ 5000,00
+const WIN_MULTIPLIER = 1.8;    // Multiplicador de ganho: 1.8x
+
+// Variável global para armazenar a única instância do socket
+let globalSocketInstance: Socket | null = null;
+// Flag para controlar a inicialização
+let isInitializingSocket = false;
+
+export default function NovaInterface() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const { userBalance, updateBalance, refreshBalance } = useBalance();
+  
+  // Estados para controle do jogo
+  const [currentLine, setCurrentLine] = useState(50);
+  const [timeLeft, setTimeLeft] = useState(10);
+  const [roundStatus, setRoundStatus] = useState<'betting' | 'running' | 'finished'>('betting');
+  const [selectedBet, setSelectedBet] = useState<number | null>(null);
+  const [betType, setBetType] = useState<'ABOVE' | 'BELOW' | null>(null);
+  const [isBetting, setIsBetting] = useState(false);
+  const [result, setResult] = useState<number | null>(null);
+  const [bets, setBets] = useState<any[]>([]);
+  const [playerCount, setPlayerCount] = useState(1);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [myBet, setMyBet] = useState<{amount: number, type: 'ABOVE' | 'BELOW'} | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dailyBetTotal, setDailyBetTotal] = useState(0);
+  const [roundId, setRoundId] = useState<string | null>(null);
+  const [socketInitialized, setSocketInitialized] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const chatAreaRef = useRef<HTMLDivElement>(null);
+  
+  // Configuração dos tempos (em segundos)
+  const BETTING_DURATION = 10; // 10 segundos para apostas
+  const RUNNING_DURATION = 30; // 30 segundos para a rodada em execução
+  
+  // Simulação de apostas rápidas
+  const QUICK_BETS = [5, 10, 20, 50, 100];
+
+  // Redirecionar se não estiver autenticado
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/login');
+    }
+  }, [status, router]);
+  
+  // Rolar o chat para o final quando novas mensagens chegarem
+  useEffect(() => {
+    if (chatAreaRef.current) {
+      chatAreaRef.current.scrollTop = chatAreaRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
+  // Inicializa o servidor Socket.IO (apenas uma vez por aplicação)
+  const initializeSocketServer = useCallback(async () => {
+    if (isInitializingSocket) return;
+    
+    try {
+      isInitializingSocket = true;
+      console.log('Inicializando servidor Socket.IO...');
+      await fetch('/api/socket');
+      setSocketInitialized(true);
+      isInitializingSocket = false;
+    } catch (error) {
+      console.error('Erro ao inicializar Socket.IO:', error);
+      isInitializingSocket = false;
+    }
+  }, []);
+
+  // Função que obtém ou cria a instância global do socket
+  const getOrCreateSocketInstance = useCallback(() => {
+    // Se já temos uma instância global válida e conectada, use-a
+    if (globalSocketInstance && globalSocketInstance.connected) {
+      console.log('Reutilizando instância global do socket:', globalSocketInstance.id);
+      return globalSocketInstance;
+    }
+    
+    // Se a instância existe mas não está conectada, descartá-la
+    if (globalSocketInstance) {
+      console.log('Instância global do socket existe mas não está conectada, criando nova...');
+      globalSocketInstance.disconnect();
+      globalSocketInstance = null;
+    }
+    
+    // Criar nova instância
+    console.log('Criando nova instância global do socket...');
+    const newSocket = io({
+      reconnectionAttempts: 10,      // Aumentar número de tentativas de reconexão
+      reconnectionDelay: 3000,       // Esperar mais tempo entre reconexões (ms)
+      reconnectionDelayMax: 10000,   // Aumentar tempo máximo entre tentativas (ms)
+      timeout: 30000,                // Aumentar timeout da conexão (ms)
+      transports: ['websocket'],     // Usar apenas WebSocket para evitar polling
+      forceNew: false,               // Não forçar criação de nova conexão
+      autoConnect: true,             // Conectar automaticamente
+      reconnection: true             // Habilitar reconexão automática
+    });
+    
+    // Armazenar globalmente
+    globalSocketInstance = newSocket;
+    
+    return newSocket;
+  }, []);
+
+  // Função para configurar os eventos do Socket
+  const setupSocketEvents = useCallback((socketClient: Socket) => {
+    console.log('Configurando eventos do socket...');
+    
+    // Limpar todos os listeners existentes para evitar duplicação
+    const events = [
+      'connect', 'disconnect', 'error', 'connect_error',
+      'reconnect_attempt', 'reconnect_error', 'reconnect',
+      'lineUpdate', 'timeUpdate', 'gameState',
+      'roundStart', 'bettingStart', 'roundEnd',
+      'newBet', 'chatMessage', 'playerCount'
+    ];
+    
+    events.forEach(event => {
+      socketClient.off(event);
+    });
+    
+    socketClient.on('connect', () => {
+      console.log('Conectado ao servidor Socket.IO:', socketClient.id);
+    });
+    
+    socketClient.io.on("reconnect_attempt", (attempt) => {
+      console.log(`Tentativa de reconexão #${attempt}`);
+    });
+
+    socketClient.io.on("reconnect_error", (error) => {
+      console.error('Erro na reconexão:', error);
+    });
+
+    socketClient.io.on("reconnect", (attempt) => {
+      console.log(`Reconectado após ${attempt} tentativas`);
+    });
+    
+    socketClient.on('connect_error', (error) => {
+      console.error('Erro na conexão Socket.IO:', error);
+    });
+
+    socketClient.on('lineUpdate', (newLine: number) => {
+      setCurrentLine(newLine);
+    });
+
+    socketClient.on('timeUpdate', (timeLeft: number) => {
+      setTimeLeft(Math.ceil(timeLeft / 1000)); // Converter de milissegundos para segundos
+    });
+
+    socketClient.on('gameState', (state: any) => {
+      console.log('Estado do jogo recebido:', state);
+      setCurrentLine(state.linePosition);
+      setRoundStatus(state.phase);
+      setRoundId(state.roundId);
+      setTimeLeft(Math.ceil(state.timeLeft / 1000)); // Converter de milissegundos para segundos
+      setBets(state.bets || []);
+      setPlayerCount(state.connectedPlayers || 1);
+    });
+
+    socketClient.on('roundStart', (data: any) => {
+      console.log('Rodada iniciada:', data);
+      setRoundStatus('running');
+      setTimeLeft(Math.ceil(data.timeLeft / 1000)); // Converter de milissegundos para segundos
+      setBets(data.bets || []);
+      setResult(null);
+    });
+
+    socketClient.on('bettingStart', (data: any) => {
+      console.log('Fase de apostas iniciada:', data);
+      setRoundStatus('betting');
+      setTimeLeft(Math.ceil(data.timeLeft / 1000)); // Converter de milissegundos para segundos
+      setRoundId(data.roundId);
+      setSelectedBet(null);
+      setBetType(null);
+      setIsBetting(false);
+      setResult(null);
+      setMyBet(null);
+      setBets([]);
+      setErrorMessage(null);
+      
+      // Atualizar o saldo quando uma nova rodada começa
+      refreshBalance();
+    });
+
+    socketClient.on('roundEnd', (data: any) => {
+      console.log('Rodada finalizada:', data);
+      // Obter resultado e multiplicador do servidor
+      setResult(data.result);
+      setRoundStatus('finished');
+      
+      // Se temos uma aposta e ganhamos, atualizar o saldo imediatamente para feedback visual
+      if (myBet) {
+        const isWinner = 
+          (myBet.type === 'ABOVE' && data.result < 50) || 
+          (myBet.type === 'BELOW' && data.result >= 50);
+        
+        if (isWinner) {
+          // Usar o multiplicador recebido do servidor, ou o padrão caso não receba
+          const multiplier = data.multiplier || WIN_MULTIPLIER;
+          const winAmount = myBet.amount * multiplier;
+          updateBalance(userBalance + winAmount);
+        }
+      }
+      
+      // Atualizar o saldo quando uma rodada termina para refletir ganhos/perdas
+      refreshBalance();
+    });
+
+    socketClient.on('newBet', (bet: any) => {
+      console.log('Nova aposta recebida:', bet);
+      setBets(prev => [...prev, bet]);
+    });
+
+    socketClient.on('chatMessage', (message: any) => {
+      console.log('Nova mensagem de chat:', message);
+      setChatMessages(prev => [...prev, message]);
+    });
+
+    socketClient.on('playerCount', (count: number) => {
+      console.log('Jogadores conectados:', count);
+      setPlayerCount(count);
+    });
+
+    socketClient.on('disconnect', () => {
+      console.log('Desconectado do servidor Socket.IO');
+    });
+
+    socketClient.on('error', (error: any) => {
+      console.error('Erro de Socket.IO:', error);
+    });
+  }, [refreshBalance, userBalance, updateBalance, myBet]);
+
+  // Inicializar o socket
+  useEffect(() => {
+    // Primeiro inicializar o servidor
+    initializeSocketServer();
+    
+    // Limpeza quando o componente é desmontado
+    return () => {
+      // Não desconectamos globalmente, apenas removemos a referência local
+      socketRef.current = null;
+      setSocket(null);
+    };
+  }, [initializeSocketServer]);
+  
+  // Configurar o socket após o servidor estar inicializado
+  useEffect(() => {
+    if (!socketInitialized) return;
+    
+    // Obter ou criar o socket
+    const socketInstance = getOrCreateSocketInstance();
+    socketRef.current = socketInstance;
+    setSocket(socketInstance);
+    
+    // Configurar eventos
+    setupSocketEvents(socketInstance);
+    
+    console.log('Socket configurado com sucesso.');
+  }, [socketInitialized, getOrCreateSocketInstance, setupSocketEvents]);
+
+  // Adicionar uma estratégia de reconexão manual (evento de página)
+  const reiniciarSocket = useCallback(() => {
+    if (isReconnecting) return; // Evitar múltiplas reconexões simultâneas
+    
+    console.log('Reiniciando conexão Socket.IO manualmente...');
+    setIsReconnecting(true);
+    
+    // Fechar instância global e forçar reconexão
+    if (globalSocketInstance) {
+      globalSocketInstance.disconnect();
+      globalSocketInstance = null;
+    }
+    
+    // Limpar estado atual
+    setSocketInitialized(false);
+    socketRef.current = null;
+    setSocket(null);
+    
+    // Reiniciar após um intervalo
+    setTimeout(() => {
+      initializeSocketServer();
+      setIsReconnecting(false);
+    }, 3000);
+  }, [isReconnecting, initializeSocketServer]);
+  
+  // Validação da aposta antes de enviá-la
+  const validateBet = (amount: number, type: 'ABOVE' | 'BELOW') => {
+    // Limpar mensagem de erro anterior
+    setErrorMessage(null);
+    
+    // Validar valor mínimo
+    if (amount < MIN_BET_AMOUNT) {
+      setErrorMessage(`Valor mínimo de aposta é R$ ${MIN_BET_AMOUNT.toFixed(2)}`);
+      return false;
+    }
+    
+    // Validar valor máximo
+    if (amount > MAX_BET_AMOUNT) {
+      setErrorMessage(`Valor máximo de aposta é R$ ${MAX_BET_AMOUNT.toFixed(2)}`);
+      return false;
+    }
+    
+    // Validar saldo suficiente
+    if (amount > userBalance) {
+      setErrorMessage('Saldo insuficiente para realizar esta aposta');
+      return false;
+    }
+    
+    // Validar limite diário
+    if (dailyBetTotal + amount > DAILY_BET_LIMIT) {
+      setErrorMessage(`Você atingiu o limite diário de apostas (R$ ${DAILY_BET_LIMIT.toFixed(2)})`);
+      return false;
+    }
+    
+    return true;
+  };
+  
+  // Função para fazer apostas
+  const placeBet = async () => {
+    if (!selectedBet || !betType || roundStatus !== 'betting' || !roundId) return;
+    
+    // Validar a aposta antes de processá-la
+    if (!validateBet(selectedBet, betType)) {
+      return;
+    }
+    
+    setIsBetting(true);
+    
+    try {
+      // Fazer a aposta via API (para que seja validada e salva no banco de dados)
+      const response = await fetch('/api/bets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: selectedBet,
+          type: betType,
+          roundId: roundId
+        }),
+      });
+
+      if (response.ok) {
+        // Aposta feita com sucesso
+        const betResponse = await response.json();
+        
+        // Registrar a aposta do jogador para referência
+        setMyBet({
+          amount: selectedBet,
+          type: betType
+        });
+        
+        // Atualizar o saldo com o valor retornado pela API
+        if (betResponse.newBalance !== undefined) {
+          updateBalance(betResponse.newBalance);
+        } else {
+          // Fallback: atualizar com o valor local
+          updateBalance(userBalance - selectedBet);
+        }
+        
+        // Atualizar o total de apostas diárias
+        setDailyBetTotal(prev => prev + selectedBet);
+        
+        // Emitir evento para o servidor Socket.IO (para informar outros jogadores)
+        if (socketRef.current) {
+          socketRef.current.emit('placeBet', {
+            amount: selectedBet,
+            type: betType
+          });
+        }
+      } else {
+        // Erro ao fazer aposta
+        const error = await response.json();
+        setErrorMessage(`Erro: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('Erro ao fazer aposta:', error);
+      setErrorMessage('Erro ao fazer aposta. Tente novamente.');
+    } finally {
+      setIsBetting(false);
+    }
+  };
+  
+  // Função para enviar mensagem de chat
+  const sendChatMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !socketRef.current) return;
+    
+    // Enviar mensagem via Socket.IO
+    socketRef.current.emit('chatMessage', chatInput.trim());
+    setChatInput('');
+  };
+
+  // Componente para renderizar nome do jogador
+  const renderPlayerName = (playerId: string, playerName?: string) => {
+    if (session?.user?.id === playerId) {
+      return "Você";
+    }
+    return playerName || `Jogador ${playerId.substring(0, 5)}...`;
+  };
+  
+  if (status === 'loading') {
+    return (
+      <div className="container mx-auto px-4 py-12 flex justify-center">
+        <div className="animate-pulse">Carregando...</div>
+      </div>
+    );
+  }
+  
+  if (status === 'unauthenticated' || !session) {
+    return null;
+  }
+  
+  return (
+    <div className="container mx-auto px-4 py-12">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Área principal do jogo */}
+        <Card variant="bordered" className="md:col-span-2">
+          <CardHeader>
+            <div className="flex justify-between">
+              <div>
+                <CardTitle>Jogo ao Vivo</CardTitle>
+                <CardDescription>Faça suas apostas e acompanhe os resultados</CardDescription>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-400">Jogadores online</p>
+                <p className="font-medium">{playerCount}</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              {/* Status da conexão */}
+              {(!socket?.connected || isReconnecting) && (
+                <div className="mb-4 p-2 rounded-md bg-yellow-600 bg-opacity-20 border border-yellow-600 text-center">
+                  <p className="text-yellow-500 text-sm">
+                    {isReconnecting ? 'Reconectando ao servidor...' : 'Desconectado do servidor'}
+                  </p>
+                  <Button 
+                    variant="outline" 
+                    onClick={reiniciarSocket}
+                    disabled={isReconnecting}
+                    className="mt-1 px-2 py-1 text-xs"
+                  >
+                    {isReconnecting ? 'Reconectando...' : 'Reconectar'}
+                  </Button>
+                </div>
+              )}
+              
+              <div className="relative h-64 bg-[#121212] rounded-lg mb-4 overflow-hidden border border-gray-800">
+                <div
+                  className="absolute w-full h-1 bg-[#3bc37a] transition-all duration-300"
+                  style={{ top: `${currentLine}%` }}
+                />
+                <div className="absolute left-0 top-1/2 w-full h-1 bg-gray-600 opacity-50" />
+                
+                {result !== null && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                    <div className="text-center">
+                      <p className="text-lg">Resultado</p>
+                      <p className={`text-2xl font-bold ${currentLine < 50 ? "text-[#3bc37a]" : "text-[#1a86c7]"}`}>
+                        {currentLine < 50 ? "ACIMA" : "ABAIXO"} ({typeof result === 'number' ? result.toFixed(1) : result})
+                      </p>
+                      
+                      {myBet && (
+                        <p className="mt-2">
+                          {(myBet.type === 'ABOVE' && currentLine < 50) || (myBet.type === 'BELOW' && currentLine >= 50) ? (
+                            <span className="text-[#3bc37a]">Você ganhou R$ {(myBet.amount * WIN_MULTIPLIER).toFixed(2)}</span>
+                          ) : (
+                            <span className="text-red-500">Você perdeu R$ {myBet.amount.toFixed(2)}</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-center mb-4">
+                <div className="inline-block px-4 py-2 rounded-full bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white text-lg font-medium">
+                  {roundStatus === 'betting' && `Apostas: ${timeLeft}s`}
+                  {roundStatus === 'running' && `Rodada em andamento: ${timeLeft}s`}
+                  {roundStatus === 'finished' && 'Rodada finalizada'}
+                </div>
+              </div>
+              
+              {/* Mensagem de erro, se houver */}
+              {errorMessage && (
+                <div className="mb-4 p-3 bg-red-500 bg-opacity-20 border border-red-500 rounded-md text-red-400 text-sm">
+                  {errorMessage}
+                </div>
+              )}
+              
+              <div className="flex justify-center gap-4 mb-6">
+                <Button
+                  variant={betType === 'ABOVE' ? 'primary' : 'secondary'}
+                  disabled={roundStatus !== 'betting' || myBet !== null}
+                  onClick={() => setBetType('ABOVE')}
+                >
+                  Acima
+                </Button>
+                <Button
+                  variant={betType === 'BELOW' ? 'primary' : 'secondary'}
+                  disabled={roundStatus !== 'betting' || myBet !== null}
+                  onClick={() => setBetType('BELOW')}
+                >
+                  Abaixo
+                </Button>
+              </div>
+              
+              <div className="flex justify-center flex-wrap gap-2 mb-6">
+                {QUICK_BETS.map((bet) => (
+                  <button
+                    key={bet}
+                    onClick={() => setSelectedBet(bet)}
+                    disabled={roundStatus !== 'betting' || bet > userBalance || myBet !== null}
+                    className={`px-4 py-2 rounded-md ${
+                      selectedBet === bet 
+                        ? 'bg-[#3bc37a] text-white' 
+                        : bet > userBalance
+                          ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                          : 'bg-[#1e1e1e] text-white hover:bg-[#1a86c7] hover:bg-opacity-30'
+                    }`}
+                  >
+                    R$ {bet}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="text-center text-xs text-gray-400 mb-2">
+                <p>Limites: Min R$ {MIN_BET_AMOUNT} • Max R$ {MAX_BET_AMOUNT} • Diário R$ {DAILY_BET_LIMIT}</p>
+                <p>Total apostado hoje: R$ {dailyBetTotal.toFixed(2)} • Multiplicador de ganho: {WIN_MULTIPLIER}x</p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button
+              variant="primary"
+              fullWidth
+              disabled={!selectedBet || !betType || isBetting || roundStatus !== 'betting' || (selectedBet || 0) > userBalance || myBet !== null}
+              onClick={placeBet}
+            >
+              {isBetting ? 'Processando...' : myBet ? 'Aposta Realizada' : 'Fazer Aposta'}
+            </Button>
+          </CardFooter>
+        </Card>
+        
+        {/* Área lateral - Informações e chat */}
+        <div className="space-y-8">
+          {/* Cartão de informações financeiras */}
+          <Card variant="bordered">
+            <CardHeader>
+              <CardTitle>Seu Saldo</CardTitle>
+              <CardDescription>Informações da sua conta</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-6">
+                <p className="text-sm text-gray-400 mb-1">Saldo Disponível</p>
+                <p className="text-3xl font-bold bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] bg-clip-text text-transparent">
+                  R$ {userBalance.toFixed(2)}
+                </p>
+              </div>
+            </CardContent>
+            <CardFooter className="flex flex-wrap justify-between gap-2">
+              <Button variant="primary" onClick={() => router.push('/profile')}>
+                Recarregar
+              </Button>
+              <Button variant="secondary" onClick={() => router.push('/profile')}>
+                Ver Perfil
+              </Button>
+            </CardFooter>
+          </Card>
+          
+          {/* Apostas */}
+          <Card variant="bordered">
+            <CardHeader>
+              <CardTitle>Apostas Atuais</CardTitle>
+              <CardDescription>Apostas da rodada atual</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-40 overflow-y-auto">
+                {bets.length > 0 ? (
+                  <ul className="space-y-3">
+                    {bets.map((bet) => (
+                      <li key={bet.id} className="flex justify-between items-center border-b border-gray-800 pb-2">
+                        <span>{renderPlayerName(bet.playerId || bet.userId, bet.playerName)}</span>
+                        <div className={`inline-flex items-center ${bet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
+                          {bet.type === 'ABOVE' ? '↑' : '↓'} 
+                          <span className="ml-1 font-medium">R$ {bet.amount}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-500 text-center py-6">Nenhuma aposta realizada</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Chat */}
+          <Card variant="bordered">
+            <CardHeader>
+              <CardTitle>Chat ao Vivo</CardTitle>
+              <CardDescription>Converse com outros jogadores</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div ref={chatAreaRef} className="h-48 overflow-y-auto mb-4 space-y-3 px-2">
+                {chatMessages.length > 0 ? (
+                  chatMessages.map((msg, index) => (
+                    <div key={index} className="flex gap-2">
+                      <span className="font-medium">{renderPlayerName(msg.playerId || msg.userId, msg.playerName)}</span>
+                      <span className="text-gray-300">{msg.message}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 italic text-center py-6">Seja o primeiro a enviar uma mensagem!</p>
+                )}
+              </div>
+              
+              <form onSubmit={sendChatMessage} className="flex gap-2">
+                <Input
+                  placeholder="Digite sua mensagem..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                />
+                <Button type="submit" disabled={!chatInput.trim() || !socket?.connected}>
+                  Enviar
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+} 

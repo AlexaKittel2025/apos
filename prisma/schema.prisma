@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  name         String
+  balance      Float         @default(0)
+  role         Role          @default(USER)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  bets         Bet[]
+  transactions Transaction[]
+}
+
+model Bet {
+  id        String     @id @default(cuid())
+  userId    String
+  amount    Float
+  type      BetType
+  result    BetResult?
+  createdAt DateTime   @default(now())
+  roundId   String
+  round     Round      @relation(fields: [roundId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+}
+
+model Round {
+  id          String      @id @default(cuid())
+  result      Float
+  startTime   DateTime    @default(now())
+  endTime     DateTime
+  status      RoundStatus @default(BETTING)
+  houseProfit Float       @default(0)
+  bets        Bet[]
+}
+
+model Transaction {
+  id        String            @id @default(cuid())
+  userId    String
+  amount    Float
+  type      TransactionType
+  status    TransactionStatus @default(PENDING)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User              @relation(fields: [userId], references: [id])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum BetType {
+  ABOVE
+  BELOW
+}
+
+enum BetResult {
+  WIN
+  LOSE
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+enum RoundStatus {
+  BETTING
+  RUNNING
+  FINISHED
+}

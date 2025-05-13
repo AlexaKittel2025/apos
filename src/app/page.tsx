@@ -1,0 +1,1 @@
+export { default } from './nova-interface/page'; 

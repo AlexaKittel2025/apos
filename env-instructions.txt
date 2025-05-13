@@ -1,0 +1,13 @@
+# Instruções para configurar o arquivo .env.local
+
+Para corrigir os problemas de autenticação, crie um arquivo chamado `.env.local` na raiz do projeto 
+(mesmo nível que o package.json) com o seguinte conteúdo:
+
+```
+DATABASE_URL="postgresql://postgres:sosederbele@localhost:5432/torch"
+NEXTAUTH_SECRET="green-game-secret-key-123"
+NEXTAUTH_URL="http://localhost:3000"
+JWT_SECRET="jwt-secret-key-for-green-game-123"
+```
+
+Após criar este arquivo, reinicie o servidor com `npm run dev`. 
