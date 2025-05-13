@@ -57,9 +57,14 @@ export default function Register() {
       <div className="max-w-md w-full space-y-8 bg-[#1E1E1E] p-8 rounded-xl shadow-lg border border-gray-800">
         <div className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] flex items-center justify-center">
-              <span className="text-white text-2xl font-bold">D</span>
-            </div>
+            <Image
+              src="/imagens/logo.png"
+              alt="Logo Din-Din"
+              width={120}
+              height={120}
+              className="h-auto"
+              priority
+            />
           </div>
           <h2 className="text-3xl font-extrabold text-white">
             Crie sua conta
