@@ -102,6 +102,12 @@ const SocketHandler = async (req: NextApiRequest, res: NextApiResponseWithSocket
   let connectionDebounceMap: Record<string, number> = {}; // Controle de reconexões por IP
   let isFirstInitialization = !gameState.roundId; // Verificar se é a primeira inicialização
 
+  // Variáveis para controlar a tendência do gráfico
+  let trendDirection = 0; // -1 (descendo), 0 (neutro), 1 (subindo)
+  let trendStrength = 0.5; // Força da tendência atual (0 a 1)
+  let trendDuration = 0; // Duração restante da tendência atual
+  let volatility = 0.5; // Volatilidade atual (0 a 1)
+
   // Adicionar função para limpar jogadores inativos
   const cleanupInactivePlayers = () => {
     const now = Date.now();
@@ -183,11 +189,60 @@ const SocketHandler = async (req: NextApiRequest, res: NextApiResponseWithSocket
     }
   };
 
-  // Função para simular o movimento da linha
+  // Função para simular o movimento da linha com características de mercado financeiro
   const updateLine = () => {
-    // Atualiza a posição da linha (movimento aleatório)
-    const change = Math.random() * 10 - 5; // Valor entre -5 e 5
+    // Atualizar tendência se necessário
+    if (trendDuration <= 0) {
+      // Gerar nova tendência
+      trendDirection = Math.random() > 0.5 ? 1 : -1; // 50% chance de subir ou descer
+      if (Math.random() < 0.2) trendDirection = 0; // 20% chance de tendência neutra
+      
+      // Força da tendência (maior valor = movimento mais forte na direção da tendência)
+      trendStrength = 0.3 + Math.random() * 0.7; // Entre 0.3 e 1.0
+      
+      // Duração da tendência (em número de atualizações)
+      trendDuration = 5 + Math.floor(Math.random() * 10); // Entre 5 e 14 atualizações
+      
+      // Volatilidade (maior valor = movimentos mais bruscos)
+      volatility = 0.2 + Math.random() * 0.8; // Entre 0.2 e 1.0
+      
+      console.log(`Nova tendência: ${trendDirection > 0 ? 'ALTA' : trendDirection < 0 ? 'BAIXA' : 'NEUTRA'}, 
+                   força: ${trendStrength.toFixed(2)}, 
+                   duração: ${trendDuration}, 
+                   volatilidade: ${volatility.toFixed(2)}`);
+    }
+    
+    // Reduzir duração da tendência
+    trendDuration--;
+    
+    // Calcular componente de tendência
+    const trendComponent = trendDirection * trendStrength * 3; // Escala para ter efeito perceptível
+    
+    // Calcular componente aleatório (ruído)
+    const randomRange = 5 * volatility; // Maior volatilidade = maior range de variação aleatória
+    const noiseComponent = (Math.random() * randomRange * 2) - randomRange;
+    
+    // Movimento total
+    const change = trendComponent + noiseComponent;
+    
+    // Atualizar posição com limites
     gameState.linePosition = Math.max(0, Math.min(100, gameState.linePosition + change));
+    
+    // Adicionar pequena chance de reversão de tendência se valores muito extremos
+    if (gameState.linePosition > 90 && trendDirection > 0) {
+      if (Math.random() < 0.3) { // 30% chance de reverter se muito alto
+        trendDirection = -1;
+        trendDuration = 3 + Math.floor(Math.random() * 5);
+        console.log('Reversão para baixo devido a valor muito alto');
+      }
+    } else if (gameState.linePosition < 10 && trendDirection < 0) {
+      if (Math.random() < 0.3) { // 30% chance de reverter se muito baixo
+        trendDirection = 1;
+        trendDuration = 3 + Math.floor(Math.random() * 5);
+        console.log('Reversão para cima devido a valor muito baixo');
+      }
+    }
+    
     return gameState.linePosition;
   };
 
