@@ -34,6 +34,7 @@ export default function NovaInterface() {
   const [betType, setBetType] = useState<'ABOVE' | 'BELOW' | null>(null);
   const [isBetting, setIsBetting] = useState(false);
   const [result, setResult] = useState<number | null>(null);
+  const [displayResult, setDisplayResult] = useState<number | null>(null); // Resultado para exibição
   const [bets, setBets] = useState<any[]>([]);
   const [playerCount, setPlayerCount] = useState(1);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -201,8 +202,17 @@ export default function NovaInterface() {
 
     socketClient.on('roundEnd', (data: any) => {
       console.log('Rodada finalizada:', data);
+      
       // Obter resultado e multiplicador do servidor
       setResult(data.result);
+      
+      // Usar o valor de displayResult enviado pelo servidor ou calcular como 100 - result
+      if (data.displayResult !== undefined) {
+        setDisplayResult(data.displayResult);
+      } else {
+        setDisplayResult(Math.round(100 - data.result));
+      }
+      
       setRoundStatus('finished');
       
       // Se temos uma aposta e ganhamos, atualizar o saldo imediatamente para feedback visual
@@ -476,7 +486,7 @@ export default function NovaInterface() {
                     <div className="text-center">
                       <p className="text-lg">Resultado</p>
                       <p className={`text-2xl font-bold ${currentLine < 50 ? "text-[#3bc37a]" : "text-[#1a86c7]"}`}>
-                        {currentLine < 50 ? "ACIMA" : "ABAIXO"} ({typeof result === 'number' ? result.toFixed(1) : result})
+                        {currentLine < 50 ? "ACIMA" : "ABAIXO"} ({displayResult !== null ? displayResult.toFixed(1) : (100 - (result || 0)).toFixed(1)})
                       </p>
                       
                       {myBet && (
