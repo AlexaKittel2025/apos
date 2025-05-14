@@ -3,6 +3,12 @@ import { Inter } from 'next/font/google'
 import '@/styles/globals.css'
 import { Providers } from './providers'
 import Header from '@/components/Header'
+import dynamic from 'next/dynamic'
+
+// Importar componente de banner de manutenção de forma dinâmica (só no cliente)
+const MaintenanceBanner = dynamic(() => import('@/components/MaintenanceBanner'), {
+  ssr: false,
+});
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' })
 
@@ -26,6 +32,9 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <Providers>
+          {/* Banner de manutenção - mostrado somente quando necessário */}
+          <MaintenanceBanner />
+          
           <Header />
           <main>
             {children}

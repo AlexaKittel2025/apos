@@ -87,7 +87,7 @@ export default async function handler(
   // POST para enviar nova mensagem
   if (req.method === 'POST') {
     try {
-      const { text, recipientId, isImage, fileInfo } = req.body;
+      const { text, recipientId, isImage, fileInfo, newConversation } = req.body;
       
       if (!text) {
         return res.status(400).json({ message: 'Texto da mensagem é obrigatório' });
@@ -95,6 +95,27 @@ export default async function handler(
       
       // Determinar se é admin ou usuário
       const isAdmin = session.user.role === 'ADMIN';
+      
+      // Se for uma nova conversa, remover apenas a mensagem final anterior
+      if (newConversation && !isAdmin) {
+        const userId = session.user.id;
+        
+        // Filtrar para remover apenas as mensagens finais, preservando o resto do histórico
+        const finalMessages = messagesStore.chatMessages.filter(msg => 
+          msg.isFinal && (msg.userId === userId || msg.recipientId === userId)
+        );
+        
+        // Para cada mensagem final, removê-la do array de mensagens
+        finalMessages.forEach(finalMsg => {
+          const index = messagesStore.chatMessages.findIndex(msg => msg.id === finalMsg.id);
+          if (index !== -1) {
+            messagesStore.chatMessages.splice(index, 1);
+          }
+        });
+        
+        // Salvar alterações
+        messagesStore.saveMessages();
+      }
       
       // Criar mensagem
       const newMessage = {

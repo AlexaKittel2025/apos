@@ -5,6 +5,11 @@ import Header from '@/components/Header';
 import { useRouter } from 'next/router';
 import { BalanceProvider } from '@/lib/BalanceContext';
 
+// Este comentário garante que o script de inicialização seja importado no lado do servidor
+// O Next.js faz tree-shaking de imports não utilizados, então usamos um comentário para evitar isso
+// @ts-ignore
+typeof window === 'undefined' && require('./api/_init-server');
+
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   

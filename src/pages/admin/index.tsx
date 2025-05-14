@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/router';
 import ChatSupport from '@/components/ChatSupport';
+import Link from 'next/link';
 
 interface GameStats {
   totalBets: number;
@@ -64,7 +65,7 @@ export default function AdminPanel() {
   const [playerCount, setPlayerCount] = useState(0);
   
   // Tabs de navegação
-  const [activeTab, setActiveTab] = useState('stats'); // 'stats', 'recharge', 'house-profit', 'withdrawals', 'deposits', 'chat'
+  const [activeTab, setActiveTab] = useState('stats'); // 'stats', 'recharge', 'house-profit', 'withdrawals', 'deposits', 'chat', 'maintenance'
   
   // Estado para modal de detalhes da transação
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -73,6 +74,56 @@ export default function AdminPanel() {
   // Estado para rastrear o usuário selecionado no chat
   const [selectedChatUser, setSelectedChatUser] = useState<string | undefined>(undefined);
   
+  // Estado para a manutenção
+  const [maintenanceStatus, setMaintenanceStatus] = useState({
+    enabled: false,
+    plannedEndTime: '',
+    title: 'Sistema em Manutenção',
+    message: 'Estamos trabalhando para melhorar o sistema. Voltaremos em breve!'
+  });
+  const [loadingMaintenance, setLoadingMaintenance] = useState(false);
+  
+  // Adicionar efeito para verificar parâmetros na URL
+  useEffect(() => {
+    // Verificar se há parâmetros na URL para pré-selecionar abas
+    if (router.query.tab) {
+      setActiveTab(router.query.tab as string);
+      
+      // Se for a aba de recarga e tiver email, preencher automaticamente
+      if (router.query.tab === 'recharge' && router.query.email) {
+        setUserEmail(router.query.email as string);
+        searchUserByEmail(router.query.email as string);
+      }
+    }
+  }, [router.query]);
+
+  // Versão modificada da função searchUser para ser usada programaticamente
+  const searchUserByEmail = async (email: string) => {
+    if (!email) return;
+    
+    try {
+      setSearchingUser(true);
+      setErrorMessage('');
+      
+      const response = await fetch(`/api/admin/users?email=${encodeURIComponent(email)}`);
+      
+      if (response.ok) {
+        const user = await response.json();
+        setFoundUser(user);
+      } else {
+        const error = await response.json();
+        setErrorMessage(error.message || 'Usuário não encontrado');
+        setFoundUser(null);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar usuário:', error);
+      setErrorMessage('Erro ao buscar usuário');
+      setFoundUser(null);
+    } finally {
+      setSearchingUser(false);
+    }
+  };
+
   // Função para extrair detalhes da transação
   const getTransactionDetails = (transaction: any) => {
     if (!transaction?.details) return { pixKey: 'Não informado', method: 'Não informado' };
@@ -262,32 +313,6 @@ export default function AdminPanel() {
     }
   };
 
-  const searchUser = async () => {
-    if (!userEmail) return;
-    
-    try {
-      setSearchingUser(true);
-      setErrorMessage('');
-      
-      const response = await fetch(`/api/admin/users?email=${encodeURIComponent(userEmail)}`);
-      
-      if (response.ok) {
-        const user = await response.json();
-        setFoundUser(user);
-      } else {
-        const error = await response.json();
-        setErrorMessage(error.message || 'Usuário não encontrado');
-        setFoundUser(null);
-      }
-    } catch (error) {
-      console.error('Erro ao buscar usuário:', error);
-      setErrorMessage('Erro ao buscar usuário');
-      setFoundUser(null);
-    } finally {
-      setSearchingUser(false);
-    }
-  };
-
   const rechargeUserBalance = async () => {
     if (!foundUser || rechargeAmount <= 0) return;
     
@@ -329,6 +354,38 @@ export default function AdminPanel() {
     setShowDetailsModal(true);
   };
 
+  // Adicionar função para carregar status de manutenção
+  const fetchMaintenanceStatus = async () => {
+    try {
+      setLoadingMaintenance(true);
+      const token = localStorage.getItem('admin-api-token');
+      
+      const response = await fetch('/api/admin/maintenance', {
+        headers: {
+          Authorization: `Bearer ${token || ''}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMaintenanceStatus(data);
+      } else {
+        console.error('Erro ao carregar status de manutenção');
+      }
+    } catch (error) {
+      console.error('Erro ao carregar status de manutenção:', error);
+    } finally {
+      setLoadingMaintenance(false);
+    }
+  };
+
+  // Adicionar efeito para carregar manutenção quando a aba for selecionada
+  useEffect(() => {
+    if (activeTab === 'maintenance') {
+      fetchMaintenanceStatus();
+    }
+  }, [activeTab]);
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
@@ -348,7 +405,7 @@ export default function AdminPanel() {
         </div>
 
         {/* Navegação por tabs */}
-        <div className="flex border-b border-gray-800 mb-8">
+        <div className="flex border-b border-gray-800 mb-8 overflow-x-auto">
           <button
             className={`px-4 py-2 ${activeTab === 'stats' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
             onClick={() => setActiveTab('stats')}
@@ -384,6 +441,12 @@ export default function AdminPanel() {
             onClick={() => setActiveTab('chat')}
           >
             Chat
+          </button>
+          <button
+            className={`px-4 py-2 ${activeTab === 'maintenance' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setActiveTab('maintenance')}
+          >
+            Manutenção
           </button>
         </div>
 
@@ -491,7 +554,7 @@ export default function AdminPanel() {
                   />
                 </div>
                 <button
-                  onClick={searchUser}
+                  onClick={() => searchUserByEmail(userEmail)}
                   disabled={!userEmail || searchingUser}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white disabled:bg-gray-600"
                 >
@@ -551,56 +614,214 @@ export default function AdminPanel() {
           <div className="bg-gray-800 p-6 rounded-lg mb-8">
             <h2 className="text-xl font-semibold mb-4">Configuração de Lucro da Casa</h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div>
-                <h3 className="text-lg mb-2">Lucro Atual da Casa</h3>
-                <p className="text-3xl font-bold text-green-500 mb-4">
-                  R$ {stats.houseProfit?.toFixed(2) || '0.00'}
-                </p>
-                <p className="text-sm text-gray-400">
-                  Este é o lucro total acumulado pela casa em todas as rodadas.
-                </p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg mb-2">Lucro da Rodada Atual</h3>
-                <div className="flex flex-col space-y-4">
-                  <div>
-                    <label htmlFor="houseProfit" className="block text-sm font-medium text-gray-400 mb-1">
-                      Valor do Lucro da Casa (%)
-                    </label>
-                    <input
-                      type="number"
-                      id="houseProfit"
-                      value={houseProfit}
-                      onChange={(e) => setHouseProfit(Number(e.target.value))}
-                      min="0"
-                      max="100"
-                      step="1"
-                      className="w-full bg-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
+            <div className="grid grid-cols-1 gap-6 mb-8">
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-green-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                  </svg>
+                  Visão Geral Financeira
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Lucro Total da Casa</p>
+                    <p className="text-3xl font-bold text-green-500">
+                      R$ {stats.houseProfit?.toFixed(2) || '0.00'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Acumulado de todas as rodadas</p>
                   </div>
-                  <button
-                    onClick={updateHouseProfit}
-                    disabled={loading}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-white"
-                  >
-                    Atualizar Lucro da Rodada
-                  </button>
+                  
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Valor Total Apostado</p>
+                    <p className="text-3xl font-bold text-blue-400">
+                      R$ {stats.totalAmount?.toFixed(2) || '0.00'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Total de {stats.totalBets || 0} apostas realizadas</p>
+                  </div>
+                  
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Taxa de Lucratividade</p>
+                    <p className="text-3xl font-bold text-yellow-400">
+                      {stats.totalAmount && stats.totalAmount > 0
+                        ? `${((stats.houseProfit / stats.totalAmount) * 100).toFixed(2)}%`
+                        : '0.00%'
+                      }
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Retorno sobre valor apostado</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="bg-gray-700 p-4 rounded">
-              <h3 className="font-medium text-yellow-400 mb-2">Como funciona o lucro da casa?</h3>
-              <p className="text-sm mb-2">
-                O lucro da casa é uma porcentagem que determina a vantagem da casa sobre as apostas.
-                Um valor maior significa que a casa tem mais chances de ganhar, enquanto um valor
-                menor torna o jogo mais equilibrado para os jogadores.
-              </p>
-              <p className="text-sm">
-                Recomendação: Mantenha o valor entre 1% e 10% para um jogo justo e lucrativo.
-              </p>
+              
+              {stats.currentRound && (
+                <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                  <h3 className="flex items-center text-lg font-medium text-blue-400 mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    Rodada Atual
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-gray-800 p-3 rounded-lg">
+                      <p className="text-gray-400 text-sm">ID da Rodada</p>
+                      <p className="text-md font-medium text-white truncate">{stats.currentRound.id}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Término: {new Date(stats.currentRound.endTime).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    
+                    <div className="bg-gray-800 p-3 rounded-lg">
+                      <p className="text-gray-400 text-sm">Resultado Atual</p>
+                      <p className="text-2xl font-bold text-white">
+                        {stats.currentRound.result?.toFixed(2) || 'Aguardando'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Multiplicador final</p>
+                    </div>
+                    
+                    <div className="bg-gray-800 p-3 rounded-lg">
+                      <p className="text-gray-400 text-sm">Lucro da Casa (Rodada)</p>
+                      <p className="text-2xl font-bold text-green-500">
+                        {stats.currentRound.houseProfit}%
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Margem aplicada à rodada atual
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-purple-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                  </svg>
+                  Ajustar Lucro da Casa
+                </h3>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-300 mb-3">
+                    Defina a porcentagem de lucro da casa para a rodada atual. Este valor determina a vantagem 
+                    matemática da casa sobre os jogadores.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="mb-3">
+                        <div className="flex justify-between mb-1">
+                          <label htmlFor="houseProfit" className="text-sm font-medium text-gray-400">
+                            Lucro da Casa (%)
+                          </label>
+                          <span className="text-sm text-white">{houseProfit}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          id="houseProfit"
+                          value={houseProfit}
+                          onChange={(e) => setHouseProfit(Number(e.target.value))}
+                          min="0"
+                          max="15"
+                          step="0.5"
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                        />
+                        <div className="flex justify-between mt-1 text-xs text-gray-500">
+                          <span>0%</span>
+                          <span>Recomendado: 3-5%</span>
+                          <span>15%</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-2 my-4">
+                        <button 
+                          onClick={() => setHouseProfit(1)}
+                          className="px-2 py-1 bg-gray-700 rounded text-xs hover:bg-gray-600 transition-colors"
+                        >
+                          1%
+                        </button>
+                        <button 
+                          onClick={() => setHouseProfit(3)}
+                          className="px-2 py-1 bg-gray-700 rounded text-xs hover:bg-gray-600 transition-colors"
+                        >
+                          3%
+                        </button>
+                        <button 
+                          onClick={() => setHouseProfit(5)}
+                          className="px-2 py-1 bg-gray-700 rounded text-xs hover:bg-gray-600 transition-colors"
+                        >
+                          5%
+                        </button>
+                        <button 
+                          onClick={() => setHouseProfit(7)}
+                          className="px-2 py-1 bg-gray-700 rounded text-xs hover:bg-gray-600 transition-colors"
+                        >
+                          7%
+                        </button>
+                        <button 
+                          onClick={() => setHouseProfit(10)}
+                          className="px-2 py-1 bg-gray-700 rounded text-xs hover:bg-gray-600 transition-colors"
+                        >
+                          10%
+                        </button>
+                      </div>
+                      
+                      <button
+                        onClick={updateHouseProfit}
+                        disabled={loading}
+                        className="w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-md hover:opacity-90 disabled:opacity-50 transition-colors"
+                      >
+                        {loading ? 'Atualizando...' : 'Aplicar Configurações'}
+                      </button>
+                    </div>
+                    
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <h4 className="text-sm font-medium text-yellow-400 mb-2">Guia de Margem de Lucro</h4>
+                      <ul className="text-sm space-y-2 text-gray-300">
+                        <li className="flex items-start">
+                          <span className="text-blue-400 mr-2">•</span>
+                          <span><strong>1-2%:</strong> Muito baixo - quase equilibrado entre jogador e casa</span>
+                        </li>
+                        <li className="flex items-start">
+                          <span className="text-green-400 mr-2">•</span>
+                          <span><strong>3-5%:</strong> Recomendado - boa experiência para jogadores com lucro sustentável</span>
+                        </li>
+                        <li className="flex items-start">
+                          <span className="text-yellow-400 mr-2">•</span>
+                          <span><strong>6-10%:</strong> Alto - lucro maior para a casa, menor retorno aos jogadores</span>
+                        </li>
+                        <li className="flex items-start">
+                          <span className="text-red-400 mr-2">•</span>
+                          <span><strong>10-15%:</strong> Muito alto - jogadores terão dificuldade em ganhar a longo prazo</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-amber-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  Informações sobre Lucro da Casa
+                </h3>
+                <div className="text-sm text-gray-300 space-y-3">
+                  <p>
+                    O <strong>lucro da casa</strong> (ou house edge) é a vantagem matemática que o cassino tem sobre os jogadores.
+                    É calculado como uma porcentagem do valor total apostado que o cassino espera ganhar a longo prazo.
+                  </p>
+                  <p>
+                    <strong>Como funciona:</strong> Um lucro da casa de 5% significa que, para cada R$100 apostados, a casa espera 
+                    ganhar R$5 a longo prazo. Quanto menor o lucro da casa, mais justo é o jogo para os jogadores.
+                  </p>
+                  <p>
+                    <strong>Recomendação:</strong> Para oferecer uma boa experiência aos jogadores enquanto mantém a 
+                    sustentabilidade financeira, recomendamos manter o lucro da casa entre 3% e 5%.
+                  </p>
+                  <p>
+                    Um valor muito alto pode afastar jogadores ao perceberem que têm poucas chances de ganhar, enquanto 
+                    um valor muito baixo pode não gerar receita suficiente para cobrir custos operacionais.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -739,9 +960,99 @@ export default function AdminPanel() {
                 selectedUserId={selectedChatUser}
                 onUserChange={setSelectedChatUser}
                 title="Painel de Suporte"
-                height="600px"
+                height="700px"
               />
             </div>
+          </div>
+        )}
+
+        {/* Conteúdo da aba Manutenção */}
+        {activeTab === 'maintenance' && (
+          <div className="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-semibold mb-4">Controle de Manutenção do Sistema</h2>
+            
+            {loadingMaintenance ? (
+              <div className="text-center py-8">Carregando informações de manutenção...</div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-3 h-3 rounded-full ${maintenanceStatus.enabled ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                    <span className="font-medium">
+                      Status atual: {maintenanceStatus.enabled ? 'Em manutenção' : 'Sistema online'}
+                    </span>
+                  </div>
+                  
+                  {maintenanceStatus.enabled && (
+                    <div className="bg-red-900 bg-opacity-30 border border-red-700 p-4 rounded-lg mb-4">
+                      <h3 className="text-red-400 font-medium mb-2">Sistema em Modo de Manutenção</h3>
+                      <p className="text-sm mb-2">O sistema está atualmente em manutenção e indisponível para usuários.</p>
+                      
+                      {maintenanceStatus.plannedEndTime && (
+                        <div className="mt-2">
+                          <p className="text-sm">Retorno previsto: <span className="font-medium">{new Date(maintenanceStatus.plannedEndTime).toLocaleString()}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="bg-gray-700 p-5 rounded-lg mb-6">
+                  <h3 className="text-lg font-medium mb-4">Configurações de Manutenção</h3>
+                  
+                  <div className="space-y-2 mb-4">
+                    <p><span className="text-gray-400">Título:</span> {maintenanceStatus.title}</p>
+                    <p><span className="text-gray-400">Mensagem:</span> {maintenanceStatus.message}</p>
+                    <p>
+                      <span className="text-gray-400">Previsão de término:</span>{' '}
+                      {maintenanceStatus.plannedEndTime 
+                        ? new Date(maintenanceStatus.plannedEndTime).toLocaleString() 
+                        : 'Não definido'}
+                    </p>
+                  </div>
+                  
+                  <Link href="/admin/maintenance" legacyBehavior>
+                    <a className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white">
+                      Editar Configurações de Manutenção
+                    </a>
+                  </Link>
+                </div>
+                
+                <div className="bg-gray-700 p-5 rounded-lg">
+                  <h3 className="text-lg font-medium mb-4">Recursos de Manutenção</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <h4 className="font-medium mb-2">Notificação de Manutenção</h4>
+                      <p className="text-sm mb-3">
+                        O banner de manutenção informa automaticamente os usuários quando uma manutenção está programada.
+                      </p>
+                      {maintenanceStatus.enabled ? (
+                        <div className="bg-red-500 text-white px-3 py-2 rounded text-sm">
+                          Banner de manutenção ativo
+                        </div>
+                      ) : (
+                        <div className="bg-gray-600 text-gray-300 px-3 py-2 rounded text-sm">
+                          Banner de manutenção inativo
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <h4 className="font-medium mb-2">Monitoramento do Sistema</h4>
+                      <p className="text-sm mb-3">
+                        Verifique o status atual do sistema, incluindo uso de recursos e conectividade.
+                      </p>
+                      <Link href="/admin/system-status" legacyBehavior>
+                        <a className="inline-block px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+                          Ver Status do Sistema
+                        </a>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

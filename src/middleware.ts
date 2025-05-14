@@ -4,6 +4,20 @@ export function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const url = request.nextUrl.pathname;
   const isProduction = process.env.NODE_ENV === 'production';
+  
+  // Verificar se o site está em modo de manutenção (através de cookie)
+  // Esta abordagem é compatível com o Edge Runtime
+  const maintenanceEnabled = request.cookies.get('maintenance-mode')?.value === 'true';
+  
+  // Se estiver em modo de manutenção, redirecionar para a página de manutenção
+  // exceto se já estiver na página de manutenção ou for um administrador
+  if (maintenanceEnabled && 
+      !url.startsWith('/maintenance') && 
+      !url.startsWith('/api/') && 
+      !isAdminUser(request)) {
+    const maintenanceUrl = new URL('/maintenance', request.url);
+    return NextResponse.redirect(maintenanceUrl);
+  }
 
   // Verificar e forçar HTTPS em produção
   if (isProduction && !request.nextUrl.protocol.includes('https')) {
@@ -46,6 +60,15 @@ export function middleware(request: NextRequest) {
   }
 
   return response;
+}
+
+// Função para verificar se o usuário atual é um administrador (bypass de manutenção)
+function isAdminUser(request: NextRequest): boolean {
+  // Verificar através de um cookie especial ou token de administrador
+  const adminBypassToken = request.cookies.get('admin-bypass-token')?.value;
+  const adminToken = process.env.ADMIN_BYPASS_TOKEN;
+  
+  return adminBypassToken === adminToken && !!adminToken;
 }
 
 // Configurar quais rotas passam pelo middleware

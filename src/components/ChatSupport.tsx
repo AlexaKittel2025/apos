@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/Button';
+import UserInfoCard from './UserInfoCard';
 
 // Interface para mensagens
 interface ChatMessage {
@@ -202,6 +203,77 @@ export default function ChatSupport({
     }
   };
   
+  // Função para iniciar uma nova conversa
+  const startNewConversation = async () => {
+    try {
+      setLoading(true);
+      
+      // Verificar se é o usuário final (não admin)
+      if (!isAdmin) {
+        // Enviar uma mensagem de sistema para reabrir o chat
+        const response = await fetch('/api/chat/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: "Iniciou uma nova conversa.",
+            newConversation: true // Adicionar flag para o backend saber que é uma nova conversa
+          }),
+        });
+        
+        if (response.ok) {
+          // Recarregar as mensagens
+          fetchMessages();
+        }
+      } else if (selectedUserId) {
+        // Para admin, apenas recarregar as mensagens do usuário selecionado
+        fetchMessages();
+      }
+    } catch (error) {
+      console.error('Erro ao iniciar nova conversa:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Função para encerrar o chat de suporte
+  const finalizeChat = async () => {
+    if (!isAdmin || !selectedUserId || !session?.user?.id) return;
+    
+    if (!window.confirm('Tem certeza que deseja encerrar este chat? Uma mensagem de encerramento será enviada ao usuário.')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      const response = await fetch('/api/chat/finalize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: selectedUserId,
+        }),
+      });
+      
+      if (response.ok) {
+        // Atualizar mensagens
+        fetchMessages();
+        // Mostrar mensagem de sucesso
+        alert('Chat encerrado com sucesso!');
+      } else {
+        alert('Erro ao encerrar chat. Tente novamente.');
+      }
+    } catch (error) {
+      console.error('Erro ao encerrar chat:', error);
+      alert('Erro ao encerrar chat. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   // Função para upload de imagem
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -329,6 +401,14 @@ export default function ChatSupport({
     }
     
     // Caso padrão: renderizar o texto com quebras de linha
+    if (msg.isFinal) {
+      return (
+        <div className="chat-final-message">
+          <p className="text-sm whitespace-pre-wrap font-medium">{msg.text}</p>
+        </div>
+      );
+    }
+    
     return <p className="text-sm whitespace-pre-wrap">{msg.text}</p>;
   };
   
@@ -351,7 +431,10 @@ export default function ChatSupport({
               onClick={() => onUserChange && onUserChange(user.id)}
             >
               <div className="flex justify-between items-center">
-                <span>{user.name || user.email}</span>
+                <div className="flex flex-col">
+                  <span className="font-medium">{user.name || 'Usuário'}</span>
+                  <span className="text-xs text-gray-400">{user.email}</span>
+                </div>
                 {user.hasNewMessages && (
                   <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
                     Novo
@@ -369,11 +452,33 @@ export default function ChatSupport({
     );
   };
   
+  // Verificar se o chat está encerrado
+  const isChatClosed = chatMessages.some(m => m.isFinal) && 
+                     !chatMessages.some(m => m.text === "Iniciou uma nova conversa.");
+
   return (
     <div className="bg-[#121212] rounded-lg p-4 border border-gray-800 flex flex-col">
       <div className="flex flex-col sm:flex-row gap-3 flex-1">
         {/* Área de seleção de usuário (apenas para admin) */}
-        {isAdmin && <div className="sm:w-1/3"><UserSelector /></div>}
+        {isAdmin && (
+          <div className="sm:w-1/3 flex flex-col">
+            <UserSelector />
+            
+            {/* Mostrar informações do usuário selecionado */}
+            {selectedUserId && <UserInfoCard userId={selectedUserId} />}
+            
+            {/* Botão para encerrar o chat */}
+            {selectedUserId && !isChatClosed && (
+              <button 
+                onClick={finalizeChat}
+                disabled={loading}
+                className="mt-3 w-full py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors disabled:opacity-50"
+              >
+                Encerrar Chat
+              </button>
+            )}
+          </div>
+        )}
         
         {/* Área de mensagens e input */}
         <div className={`flex-1 flex flex-col ${isAdmin ? 'sm:w-2/3' : 'w-full'}`}>
@@ -385,32 +490,45 @@ export default function ChatSupport({
           >
             {chatMessages.length > 0 ? (
               <div className="space-y-3">
-                {chatMessages.map((msg, index) => (
-                  <div 
-                    key={msg.id || index} 
-                    className={`flex ${msg.sender === (isAdmin ? 'ADMIN' : 'USER') ? 'justify-end' : 'justify-start'}`}
-                  >
+                {chatMessages.map((msg, index) => {
+                  // Verificar se há uma mensagem final
+                  const hasFinalMessage = chatMessages.some(m => m.isFinal);
+                  
+                  // Se houver uma mensagem final e esta não for a mensagem final, não mostrar
+                  // Só aplicamos esta lógica se não for uma nova conversa (sem o marcador 'newConversation')
+                  if (hasFinalMessage && !msg.isFinal && !chatMessages.some(m => m.text === "Iniciou uma nova conversa.")) {
+                    return null;
+                  }
+                  
+                  return (
                     <div 
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                        msg.sender === (isAdmin ? 'ADMIN' : 'USER')
-                          ? 'bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white'
-                          : msg.sender === 'SYSTEM'
-                            ? 'bg-[#d97706] text-white'
-                            : 'bg-[#2a2a2a] text-gray-100'
-                      } ${msg.isFinal ? 'border-2 border-yellow-400' : ''}`}
+                      key={msg.id || index} 
+                      className={`flex ${msg.sender === (isAdmin ? 'ADMIN' : 'USER') ? 'justify-end' : 'justify-start'}`}
                     >
-                      <MessageDisplay msg={msg} />
-                      <div className="flex justify-between items-center mt-1">
-                        <p className="text-xs opacity-70">
-                          {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                        </p>
-                        <p className="text-xs opacity-70 ml-2">
-                          {msg.userName}
-                        </p>
+                      <div 
+                        className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                          msg.sender === (isAdmin ? 'ADMIN' : 'USER')
+                            ? 'bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white'
+                            : msg.sender === 'SYSTEM'
+                              ? msg.isFinal 
+                                ? 'bg-red-900 text-white border border-red-700' 
+                                : 'bg-[#d97706] text-white'
+                              : 'bg-[#2a2a2a] text-gray-100'
+                        }`}
+                      >
+                        <MessageDisplay msg={msg} />
+                        <div className="flex justify-between items-center mt-1">
+                          <p className="text-xs opacity-70">
+                            {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </p>
+                          <p className="text-xs opacity-70 ml-2">
+                            {msg.userName}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="h-full flex items-center justify-center">
@@ -423,44 +541,56 @@ export default function ChatSupport({
             )}
           </div>
           
-          {/* Área de entrada de mensagem */}
-          <form onSubmit={sendMessage} className="flex flex-col space-y-2">
-            <div className="flex space-x-2">
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Digite sua mensagem... (Enter para enviar)"
-                rows={3}
-                className="flex-1 bg-[#1a1a1a] border border-gray-800 rounded-lg p-2 text-white resize-none focus:outline-none focus:ring-1 focus:ring-[#3bc37a]"
-                disabled={loading || (isAdmin && !selectedUserId)}
-                autoFocus={autoFocus}
-              />
-              <div className="flex flex-col space-y-2">
-                <Button 
-                  type="submit" 
-                  disabled={loading || message.trim() === '' || (isAdmin && !selectedUserId)}
-                  className="px-3 py-2 bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                >
-                  Enviar
-                </Button>
-                
-                <label className="px-3 py-2 bg-[#7c3aed] text-white rounded-md cursor-pointer text-center hover:bg-opacity-90 disabled:opacity-50">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    disabled={loading || (isAdmin && !selectedUserId)}
-                    className="hidden"
-                  />
-                  Imagem
-                </label>
-              </div>
+          {/* Área de entrada de mensagem ou botão de nova conversa */}
+          {isChatClosed ? (
+            <div className="mt-1 mb-2 text-center">
+              <button 
+                onClick={startNewConversation}
+                disabled={loading}
+                className="px-4 py-2.5 bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white text-sm rounded-md hover:opacity-90 disabled:opacity-50 transition-colors"
+              >
+                Iniciar Nova Conversa
+              </button>
             </div>
-            <p className="text-xs text-gray-400">
-              Use Enter para enviar. Envie comprovantes de pagamento como imagens para confirmar depósitos.
-            </p>
-          </form>
+          ) : (
+            <form onSubmit={sendMessage} className="flex flex-col space-y-2">
+              <div className="flex space-x-2">
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Digite sua mensagem... (Enter para enviar)"
+                  rows={3}
+                  className="flex-1 bg-[#1a1a1a] border border-gray-800 rounded-lg p-2 text-white resize-none focus:outline-none focus:ring-1 focus:ring-[#3bc37a]"
+                  disabled={loading || (isAdmin && !selectedUserId)}
+                  autoFocus={autoFocus}
+                />
+                <div className="flex flex-col space-y-2">
+                  <Button 
+                    type="submit" 
+                    disabled={loading || message.trim() === '' || (isAdmin && !selectedUserId)}
+                    className="px-3 py-2 bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                  >
+                    Enviar
+                  </Button>
+                  
+                  <label className={`px-3 py-2 bg-[#7c3aed] text-white rounded-md text-center hover:bg-opacity-90 cursor-pointer`}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={loading || (isAdmin && !selectedUserId)}
+                      className="hidden"
+                    />
+                    Imagem
+                  </label>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400">
+                Use Enter para enviar. Envie comprovantes de pagamento como imagens para confirmar depósitos.
+              </p>
+            </form>
+          )}
         </div>
       </div>
     </div>
