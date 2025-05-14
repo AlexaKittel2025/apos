@@ -10,6 +10,7 @@ import { useBalance } from '@/lib/BalanceContext';
 import Image from 'next/image';
 import { io, Socket } from 'socket.io-client';
 import ChatSupport from '@/components/ChatSupport';
+import LastResults from '@/components/LastResults';
 
 // Constantes de segurança (espelhando os valores do servidor)
 const MIN_BET_AMOUNT = 5;      // Aposta mínima: R$ 5,00
@@ -43,6 +44,7 @@ export default function NovaInterface() {
   const [myBet, setMyBet] = useState<{amount: number, type: 'ABOVE' | 'BELOW'} | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dailyBetTotal, setDailyBetTotal] = useState(0);
+  const [dailyBetLimit, setDailyBetLimit] = useState(DAILY_BET_LIMIT); // Usar o valor constante como padrão
   const [roundId, setRoundId] = useState<string | null>(null);
   const [socketInitialized, setSocketInitialized] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -65,7 +67,64 @@ export default function NovaInterface() {
     if (status === 'unauthenticated') {
       router.push('/auth/login');
     }
-  }, [status, router]);
+    
+    // Buscar o limite diário personalizado quando o usuário estiver autenticado
+    if (status === 'authenticated' && session) {
+      fetchDailyBetLimit();
+    }
+  }, [status, router, session]);
+  
+  // Atualizar o limite diário quando a página receber foco
+  useEffect(() => {
+    // Esta função será chamada quando o usuário voltar à página
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && session) {
+        console.log('Página visível novamente, atualizando limite diário...');
+        fetchDailyBetLimit();
+      }
+    };
+    
+    // Esta função será chamada quando a janela receber foco
+    const handleFocus = () => {
+      if (session) {
+        console.log('Janela recebeu foco, atualizando limite diário...');
+        fetchDailyBetLimit();
+      }
+    };
+    
+    // Adicionar listeners para os eventos
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    // Remover listeners quando o componente for desmontado
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [session]);
+  
+  // Função para buscar o limite diário personalizado
+  const fetchDailyBetLimit = async () => {
+    try {
+      const response = await fetch('/api/user/bet-limit');
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && typeof data.dailyBetLimit === 'number' && !isNaN(data.dailyBetLimit)) {
+          setDailyBetLimit(data.dailyBetLimit);
+        } else {
+          // Se a resposta for inválida, mantemos o valor padrão definido no state
+          console.log('Resposta da API válida, mas dailyBetLimit não é um número:', data);
+        }
+      } else {
+        // Em caso de erro na API, usamos o valor padrão
+        console.warn('Erro ao buscar limite diário, usando valor padrão:', DAILY_BET_LIMIT);
+      }
+    } catch (error) {
+      // Em caso de exceção, também mantemos o valor padrão
+      console.error('Erro ao carregar limite de apostas:', error);
+    }
+  };
   
   // Rolar o chat para o final quando novas mensagens chegarem
   useEffect(() => {
@@ -338,8 +397,8 @@ export default function NovaInterface() {
     }
     
     // Validar limite diário
-    if (dailyBetTotal + amount > DAILY_BET_LIMIT) {
-      setErrorMessage(`Você atingiu o limite diário de apostas (R$ ${DAILY_BET_LIMIT.toFixed(2)})`);
+    if (dailyBetTotal + amount > dailyBetLimit) {
+      setErrorMessage(`Você atingiu o limite diário de apostas (R$ ${dailyBetLimit.toFixed(2)})`);
       return false;
     }
     
@@ -391,6 +450,20 @@ export default function NovaInterface() {
         
         // Atualizar o total de apostas diárias
         setDailyBetTotal(prev => prev + selectedBet);
+        
+        // Atualizar estatísticas do usuário após aposta bem-sucedida
+        try {
+          // Chamada assíncrona para atualizar estatísticas sem bloquear a UI
+          fetch('/api/user/bet-stats?' + new Date().getTime(), {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          });
+        } catch (statsError) {
+          console.error('Erro ao atualizar estatísticas após aposta:', statsError);
+          // Não bloqueamos o fluxo por erro na atualização de estatísticas
+        }
         
         // Emitir evento para o servidor Socket.IO (para informar outros jogadores)
         if (socketRef.current) {
@@ -553,8 +626,22 @@ export default function NovaInterface() {
               </div>
               
               <div className="text-center text-xs text-gray-400 mb-2">
-                <p>Limites: Min R$ {MIN_BET_AMOUNT} • Max R$ {MAX_BET_AMOUNT} • Diário R$ {DAILY_BET_LIMIT}</p>
-                <p>Total apostado hoje: R$ {dailyBetTotal.toFixed(2)} • Multiplicador de ganho: {WIN_MULTIPLIER}x</p>
+                <p>
+                  Limites: Min R$ {MIN_BET_AMOUNT} • Max R$ {MAX_BET_AMOUNT} • 
+                  <span 
+                    className={`${dailyBetLimit !== DAILY_BET_LIMIT ? 'text-[#3bc37a] font-medium' : ''}`}
+                    title={dailyBetLimit !== DAILY_BET_LIMIT ? 'Limite personalizado definido no perfil' : ''}
+                  >
+                    Diário R$ {dailyBetLimit.toFixed(2)}
+                    {dailyBetLimit !== DAILY_BET_LIMIT && ' ✓'}
+                  </span>
+                </p>
+                <p>
+                  Total apostado hoje: R$ {dailyBetTotal.toFixed(2)} • 
+                  <span onClick={() => router.push('/profile')} className="text-[#1a86c7] cursor-pointer hover:underline">
+                    Ajustar Limite
+                  </span>
+                </p>
               </div>
             </div>
           </CardContent>
@@ -568,6 +655,11 @@ export default function NovaInterface() {
               {isBetting ? 'Processando...' : myBet ? 'Aposta Realizada' : 'Fazer Aposta'}
             </Button>
           </CardFooter>
+          
+          {/* Últimos Resultados */}
+          <div className="px-4 pb-6 pt-2">
+            <LastResults />
+          </div>
         </Card>
         
         {/* Área lateral - Informações e chat */}

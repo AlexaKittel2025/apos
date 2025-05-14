@@ -23,11 +23,11 @@ export const authOptions: NextAuthOptions = {
           }
         });
 
-        if (!userFromDB || !userFromDB.passwordHash) {
+        if (!userFromDB || !userFromDB.password) {
           return null;
         }
 
-        const passwordValid = await compare(credentials.password, userFromDB.passwordHash);
+        const passwordValid = await compare(credentials.password, userFromDB.password);
 
         if (!passwordValid) {
           return null;
@@ -38,7 +38,9 @@ export const authOptions: NextAuthOptions = {
           id: userFromDB.id,
           email: userFromDB.email,
           name: userFromDB.name,
-          role: userFromDB.role || 'user'
+          role: userFromDB.role || 'user',
+          phone: userFromDB.phone,
+          address: userFromDB.address
         };
 
         return user;
@@ -65,6 +67,8 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email;
         token.name = user.name;
         token.role = user.role || 'user';
+        token.phone = user.phone;
+        token.address = user.address;
       }
       return token;
     },
@@ -75,6 +79,8 @@ export const authOptions: NextAuthOptions = {
           email: token.email as string,
           name: token.name as string,
           role: token.role as string,
+          phone: token.phone as string | null,
+          address: token.address as string | null
         };
       }
       return session;

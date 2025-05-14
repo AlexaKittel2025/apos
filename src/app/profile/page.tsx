@@ -45,20 +45,175 @@ export default function ProfilePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   
+  // Estados para totais financeiros
+  const [totalDeposits, setTotalDeposits] = useState<number>(0);
+  const [totalWithdrawals, setTotalWithdrawals] = useState<number>(0);
+  const [totalBets, setTotalBets] = useState<number>(0);
+  const [loadingBets, setLoadingBets] = useState<boolean>(false);
+  
+  // Estado para o limite diário de apostas
+  const [dailyBetLimit, setDailyBetLimit] = useState<number>(5000);
+  const [savingBetLimit, setSavingBetLimit] = useState(false);
+  const [showBetLimitModal, setShowBetLimitModal] = useState(false);
+  const [newBetLimit, setNewBetLimit] = useState('');
+  
+  // Função para buscar todas as apostas do usuário
+  const fetchUserBets = async () => {
+    if (!session) return;
+    
+    try {
+      setLoadingBets(true);
+      // Usando o novo endpoint específico para estatísticas de apostas
+      const response = await fetch('/api/user/bet-stats?' + new Date().getTime(), {
+        // Adicionar um parâmetro de cache-busting para evitar cache
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      // Mesmo com status não-ok, tentamos parsear a resposta
+      const data = await response.json().catch(() => ({ totalBets: 0, error: 'Erro ao parsear resposta' }));
+      
+      if (!response.ok) {
+        console.error('Erro ao carregar estatísticas de apostas do usuário:', data.message || 'Erro desconhecido');
+        // Mesmo com erro, podemos usar os dados se existirem
+        if (data && typeof data.totalBets === 'number') {
+          setTotalBets(data.totalBets);
+        }
+        return;
+      }
+      
+      // Verificar se o total de apostas está presente na resposta
+      if (data && typeof data.totalBets === 'number') {
+        console.log('Total de apostas carregado:', data.totalBets);
+        setTotalBets(data.totalBets);
+      } else {
+        console.error('Formato de resposta inválido - totalBets não encontrado:', data);
+        // Se não temos dados válidos mas a resposta foi ok, assumimos zero
+        setTotalBets(0);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas de apostas do usuário:', error);
+      // Em caso de erro, não alteramos o valor atual
+    } finally {
+      setLoadingBets(false);
+    }
+  };
+  
+  // Atualizar periodicamente o total de apostas
+  useEffect(() => {
+    if (!session) return;
+    
+    // Atualizar imediatamente na primeira carga
+    fetchUserBets();
+    
+    // Configurar atualização periódica a cada 15 segundos
+    const intervalId = setInterval(() => {
+      fetchUserBets();
+    }, 15000);
+    
+    // Limpar o intervalo quando o componente for desmontado
+    return () => clearInterval(intervalId);
+  }, [session]);
+  
+  // Evento de visibilidade para atualizar quando a aba ficar visível novamente
+  useEffect(() => {
+    if (!session) return;
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchUserBets();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [session]);
+  
   // Atualizar formulário quando a sessão for carregada
   useEffect(() => {
     if (session && session.user) {
-      setEditForm({
-        name: session.user.name || '',
-        email: session.user.email || '',
-        phone: '',
-        address: '',
-      });
+      // Carregar dados do usuário diretamente do banco para garantir dados atualizados
+      const loadUserData = async () => {
+        try {
+          const response = await fetch('/api/auth/refresh-session');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+              // Atualizar o formulário com os dados mais recentes do banco
+              setEditForm({
+                name: data.user.name || '',
+                email: data.user.email || '',
+                phone: data.user.phone || '',
+                address: data.user.address || '',
+              });
+              
+              // Atualizar também os dados na sessão, se necessário
+              session.user.name = data.user.name;
+              session.user.phone = data.user.phone;
+              session.user.address = data.user.address;
+            } else {
+              // Fallback para os dados da sessão
+              setEditForm({
+                name: session.user.name || '',
+                email: session.user.email || '',
+                phone: session.user.phone || '',
+                address: session.user.address || '',
+              });
+            }
+          } else {
+            // Fallback para os dados da sessão em caso de erro
+            setEditForm({
+              name: session.user.name || '',
+              email: session.user.email || '',
+              phone: session.user.phone || '',
+              address: session.user.address || '',
+            });
+          }
+        } catch (error) {
+          console.error('Erro ao carregar dados do usuário:', error);
+          // Fallback para os dados da sessão em caso de erro
+          setEditForm({
+            name: session.user.name || '',
+            email: session.user.email || '',
+            phone: session.user.phone || '',
+            address: session.user.address || '',
+          });
+        }
+      };
+      
+      loadUserData();
       
       // Carregar transações do usuário
       fetchTransactions();
+      
+      // Carregar limite diário de apostas
+      fetchDailyBetLimit();
     }
   }, [session]);
+  
+  // Recalcular totais sempre que as transações mudarem
+  useEffect(() => {
+    if (transactions.length > 0) {
+      let deposits = 0;
+      let withdrawals = 0;
+      
+      transactions.forEach((transaction) => {
+        if (transaction.type === 'DEPOSIT' && transaction.status === 'COMPLETED') {
+          deposits += transaction.amount;
+        } else if (transaction.type === 'WITHDRAWAL' && transaction.status === 'COMPLETED') {
+          withdrawals += transaction.amount;
+        }
+      });
+      
+      setTotalDeposits(deposits);
+      setTotalWithdrawals(withdrawals);
+    }
+  }, [transactions]);
   
   // Função utilitária para tentar uma operação várias vezes
   const retryOperation = async (operation: () => Promise<any>, maxRetries = 3, delay = 1000) => {
@@ -117,6 +272,21 @@ export default function ProfilePage() {
       console.log('Transações carregadas com sucesso:', data.length);
       setTransactions(data);
       
+      // Calcular totais de depósitos e saques
+      let deposits = 0;
+      let withdrawals = 0;
+      
+      data.forEach((transaction) => {
+        if (transaction.type === 'DEPOSIT' && transaction.status === 'COMPLETED') {
+          deposits += transaction.amount;
+        } else if (transaction.type === 'WITHDRAWAL' && transaction.status === 'COMPLETED') {
+          withdrawals += transaction.amount;
+        }
+      });
+      
+      setTotalDeposits(deposits);
+      setTotalWithdrawals(withdrawals);
+      
       // Atualizar o saldo do usuário após buscar transações
       await refreshBalance();
     } catch (error) {
@@ -125,6 +295,71 @@ export default function ProfilePage() {
       setTimeout(() => setErrorMessage(''), 5000);
     } finally {
       setLoadingTransactions(false);
+    }
+  };
+  
+  // Função para carregar o limite diário de apostas
+  const fetchDailyBetLimit = async () => {
+    if (!session) return;
+    
+    try {
+      const response = await fetch('/api/user/bet-limit');
+      
+      if (!response.ok) {
+        throw new Error('Falha ao carregar o limite de apostas');
+      }
+      
+      const data = await response.json();
+      setDailyBetLimit(data.dailyBetLimit);
+    } catch (error) {
+      console.error('Erro ao carregar limite de apostas:', error);
+    }
+  };
+  
+  // Função para atualizar o limite diário de apostas
+  const handleUpdateBetLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!newBetLimit) {
+      setErrorMessage('Por favor, informe um valor para o novo limite.');
+      setTimeout(() => setErrorMessage(''), 5000);
+      return;
+    }
+    
+    try {
+      setSavingBetLimit(true);
+      
+      const response = await fetch('/api/user/bet-limit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ dailyBetLimit: newBetLimit }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Falha ao atualizar o limite');
+      }
+      
+      setDailyBetLimit(data.dailyBetLimit);
+      setNewBetLimit('');
+      
+      let message = 'Limite diário de apostas atualizado com sucesso!';
+      if (data.isPersisted === false) {
+        message += ' (Nota: Esta alteração será temporária até a próxima atualização do sistema)';
+      }
+      
+      setSuccessMessage(message);
+      setTimeout(() => setSuccessMessage(''), 5000);
+      setShowBetLimitModal(false);
+    } catch (error: any) {
+      console.error('Erro ao atualizar limite de apostas:', error);
+      setErrorMessage(error.message || 'Erro ao atualizar limite. Tente novamente.');
+      setTimeout(() => setErrorMessage(''), 5000);
+    } finally {
+      setSavingBetLimit(false);
     }
   };
   
@@ -153,13 +388,22 @@ export default function ProfilePage() {
     try {
       console.log('Enviando dados para atualização:', editForm);
       
-      // Usando o endpoint temporário
-      const response = await fetch('/api/user/temp-update', { 
+      // Verificando se há dados válidos para atualizar
+      if (!editForm.name.trim() && !editForm.phone.trim() && !editForm.address.trim()) {
+        throw new Error('Nenhum dado válido para atualização. Por favor, preencha pelo menos um campo.');
+      }
+      
+      // Usando o endpoint de persistência real
+      const response = await fetch('/api/user/update', { 
         method: 'POST', 
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editForm) 
+        body: JSON.stringify({
+          name: editForm.name.trim() || undefined,
+          phone: editForm.phone.trim() || undefined,
+          address: editForm.address.trim() || undefined
+        })
       });
       
       const responseData = await response.json();
@@ -174,11 +418,49 @@ export default function ProfilePage() {
       // Atualizar os dados da sessão para refletir as mudanças
       if (session && session.user) {
         session.user.name = responseData.name || session.user.name;
+        session.user.phone = responseData.phone || session.user.phone;
+        session.user.address = responseData.address || session.user.address;
+        
+        // Atualizar o formulário com os dados retornados para garantir consistência
+        setEditForm({
+          name: responseData.name || '',
+          email: responseData.email || '',
+          phone: responseData.phone || '',
+          address: responseData.address || ''
+        });
       }
       
-      setSuccessMessage('Perfil atualizado com sucesso!');
+      setSuccessMessage(responseData.message || 'Perfil atualizado com sucesso!');
       setTimeout(() => setSuccessMessage(''), 3000);
       setShowEditModal(false);
+      
+      // Forçar atualização da sessão e da página
+      try {
+        // Usando o novo endpoint de atualização de sessão
+        const sessionResponse = await fetch('/api/auth/refresh-session');
+        
+        if (sessionResponse.ok) {
+          const sessionData = await sessionResponse.json();
+          console.log('Sessão atualizada com sucesso:', sessionData);
+          
+          // Atualizar a sessão com os novos dados
+          if (session && sessionData.user) {
+            session.user.name = sessionData.user.name;
+            session.user.phone = sessionData.user.phone;
+            session.user.address = sessionData.user.address;
+          }
+        }
+        
+        // Forçar atualização da página para mostrar os dados atualizados
+        router.refresh();
+        
+        // Se necessário, recarregar a página completamente após um breve delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } catch (refreshError) {
+        console.error('Erro ao atualizar sessão:', refreshError);
+      }
     } catch (error: any) {
       console.error('Erro ao atualizar perfil:', error);
       setErrorMessage(error.message || 'Erro ao atualizar perfil. Tente novamente.');
@@ -198,10 +480,17 @@ export default function ProfilePage() {
       // Simulando sucesso
       const amount = parseFloat(rechargeAmount);
       updateBalance(userBalance + amount);
+      
+      // Atualizar o total de depósitos
+      setTotalDeposits(prevTotal => prevTotal + amount);
+      
       setSuccessMessage(`Recarga de R$ ${amount.toFixed(2)} realizada com sucesso!`);
       setTimeout(() => setSuccessMessage(''), 3000);
       setShowRechargeModal(false);
       setRechargeAmount('');
+      
+      // Recarregar transações para mostrar o novo depósito
+      fetchTransactions();
     } catch (error) {
       setErrorMessage('Erro ao processar recarga. Tente novamente.');
       setTimeout(() => setErrorMessage(''), 3000);
@@ -283,6 +572,11 @@ export default function ProfilePage() {
       
       // Atualizar o saldo imediatamente
       updateBalance(userBalance - amount);
+      
+      // Se a transação foi concluída imediatamente, atualizar o total
+      if (transactionData.status === 'COMPLETED') {
+        setTotalWithdrawals(prevTotal => prevTotal + amount);
+      }
       
       // Mostrar mensagem de sucesso
       setSuccessMessage(`Saque de R$ ${amount.toFixed(2)} solicitado com sucesso! Status: Pendente`);
@@ -421,7 +715,12 @@ export default function ProfilePage() {
                   
                   <div>
                     <p className="text-sm text-gray-400">Telefone</p>
-                    <p className="font-medium">{'Não informado'}</p>
+                    <p className="font-medium">{session.user.phone || 'Não informado'}</p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm text-gray-400">Endereço</p>
+                    <p className="font-medium">{session.user.address || 'Não informado'}</p>
                   </div>
                   
                   <div>
@@ -459,12 +758,26 @@ export default function ProfilePage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-400 mb-1">Saques Realizados</p>
-                <p className="font-medium">R$ 0,00</p>
+                <p className="font-medium text-red-400">
+                  {loadingTransactions ? (
+                    <span className="flex items-center">
+                      <span className="mr-2 animate-spin h-3 w-3 border-t-2 border-b-2 border-red-500 rounded-full"></span>
+                      Carregando...
+                    </span>
+                  ) : `R$ ${totalWithdrawals.toFixed(2)}`}
+                </p>
               </div>
               
               <div>
                 <p className="text-sm text-gray-400 mb-1">Recargas Feitas</p>
-                <p className="font-medium">R$ 0,00</p>
+                <p className="font-medium text-green-400">
+                  {loadingTransactions ? (
+                    <span className="flex items-center">
+                      <span className="mr-2 animate-spin h-3 w-3 border-t-2 border-b-2 border-green-500 rounded-full"></span>
+                      Carregando...
+                    </span>
+                  ) : `R$ ${totalDeposits.toFixed(2)}`}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -476,6 +789,96 @@ export default function ProfilePage() {
               Realizar Saque
             </Button>
           </CardFooter>
+        </Card>
+        
+        {/* Configurações de Jogo */}
+        <Card variant="bordered" className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Configurações de Jogo</CardTitle>
+            <CardDescription>Defina seus limites e preferências</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-4">
+              <div className="bg-gray-800 bg-opacity-30 rounded-lg p-4">
+                <h3 className="text-lg font-medium mb-2">Limite Diário de Apostas</h3>
+                <p className="text-sm text-gray-400 mb-4">Estabeleça um limite diário para controlar seus gastos com apostas.</p>
+                
+                <div className="mb-2">
+                  <p className="text-sm text-gray-400">Valor atual:</p>
+                  <p className="text-xl font-bold text-[#3bc37a]">R$ {dailyBetLimit.toFixed(2)}</p>
+                </div>
+                
+                <Button 
+                  variant="secondary"
+                  onClick={() => setShowBetLimitModal(true)}
+                  className="w-full mt-2"
+                >
+                  Alterar Limite
+                </Button>
+              </div>
+              
+              <div className="bg-gray-800 bg-opacity-30 rounded-lg p-4">
+                <h3 className="text-lg font-medium mb-2">Resumo de Apostas</h3>
+                <p className="text-sm text-gray-400 mb-4">Total de apostas realizadas desde o início.</p>
+                
+                <div className="mb-4">
+                  <p className="text-sm text-gray-400">Total apostado:</p>
+                  <p className="text-xl font-bold text-yellow-400">
+                    {loadingBets ? (
+                      <span className="flex items-center">
+                        <span className="mr-2 animate-spin h-3 w-3 border-t-2 border-b-2 border-yellow-500 rounded-full"></span>
+                        Carregando...
+                      </span>
+                    ) : `R$ ${totalBets.toFixed(2)}`}
+                  </p>
+                </div>
+                
+                <div className="h-1 w-full bg-gray-700 rounded mb-2">
+                  <div 
+                    className="h-1 bg-yellow-400 rounded" 
+                    style={{ width: `${Math.min(100, (totalBets / dailyBetLimit) * 100)}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {totalBets > 0 
+                    ? `Suas apostas representam ${Math.min(100, Math.round((totalBets / dailyBetLimit) * 100))}% do seu limite diário`
+                    : 'Nenhuma aposta realizada ainda'
+                  }
+                </p>
+                
+                <div className="mt-4">
+                  <Button 
+                    variant="secondary"
+                    onClick={fetchUserBets}
+                    className="w-full text-xs py-1"
+                    disabled={loadingBets}
+                  >
+                    {loadingBets ? 'Atualizando...' : 'Atualizar Dados'}
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="bg-gray-800 bg-opacity-30 rounded-lg p-4">
+                <h3 className="text-lg font-medium mb-2">Jogo Responsável</h3>
+                <p className="text-sm text-gray-400 mb-4">Lembre-se de jogar com moderação, estabelecendo limites saudáveis.</p>
+                
+                <ul className="text-sm text-gray-400 space-y-2">
+                  <li className="flex items-start">
+                    <div className="text-[#3bc37a] mr-2">✓</div>
+                    <p>Estabeleça um orçamento antes de jogar</p>
+                  </li>
+                  <li className="flex items-start">
+                    <div className="text-[#3bc37a] mr-2">✓</div>
+                    <p>Jogue por diversão, não como fonte de renda</p>
+                  </li>
+                  <li className="flex items-start">
+                    <div className="text-[#3bc37a] mr-2">✓</div>
+                    <p>Faça pausas regulares enquanto joga</p>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
         </Card>
         
         {/* Histórico de Transações */}
@@ -889,6 +1292,92 @@ export default function ProfilePage() {
               <p>Entre em contato com nosso suporte para receber instruções de depósito e enviar comprovantes.</p>
               <p className="mt-2">Nosso atendimento está disponível das 8h às 22h todos os dias.</p>
             </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Modal de Configuração do Limite Diário */}
+      <div
+        className={`fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-70 transition-all duration-200 ${showBetLimitModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setShowBetLimitModal(false)}
+      >
+        <div
+          className="bg-[#121212] rounded-lg shadow-xl max-w-md w-full border border-gray-800"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+            <h3 className="text-lg font-medium">Alterar Limite Diário de Apostas</h3>
+            <button
+              onClick={() => setShowBetLimitModal(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div className="p-6">
+            <form onSubmit={handleUpdateBetLimit}>
+              <div className="mb-6">
+                <p className="text-sm text-gray-400 mb-2">Limite diário atual:</p>
+                <p className="text-2xl font-bold text-[#3bc37a] mb-4">R$ {dailyBetLimit.toFixed(2)}</p>
+                
+                <label htmlFor="newBetLimit" className="block text-sm font-medium text-gray-400 mb-1">
+                  Novo limite diário
+                </label>
+                <input
+                  id="newBetLimit"
+                  type="number"
+                  min="100"
+                  step="100"
+                  value={newBetLimit}
+                  onChange={(e) => setNewBetLimit(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+                <p className="mt-2 text-xs text-gray-400">Limite mínimo: R$ 100,00 • Limite máximo: R$ 50.000,00</p>
+              </div>
+              
+              <div className="p-4 bg-gray-800 bg-opacity-30 rounded-md mb-6">
+                <h4 className="font-medium mb-2 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-yellow-500">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  Informações Importantes
+                </h4>
+                <ul className="text-sm text-gray-400 space-y-1">
+                  <li>• Este limite se aplica ao total de apostas em um período de 24 horas</li>
+                  <li>• Definir um limite ajuda você a manter o controle sobre seus gastos</li>
+                  <li>• Você pode alterar este limite a qualquer momento</li>
+                </ul>
+              </div>
+              
+              <div className="flex justify-end space-x-2">
+                <button 
+                  type="button" 
+                  onClick={() => setShowBetLimitModal(false)}
+                  disabled={savingBetLimit}
+                  className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 transition-colors disabled:bg-gray-800 disabled:text-gray-500"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={savingBetLimit}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-500 transition-colors disabled:bg-gray-800 disabled:text-gray-500"
+                >
+                  {savingBetLimit ? (
+                    <span className="flex items-center">
+                      <span className="mr-2 animate-spin h-4 w-4 border-t-2 border-b-2 border-white rounded-full"></span>
+                      Salvando...
+                    </span>
+                  ) : 'Confirmar'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

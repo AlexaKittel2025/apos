@@ -20,36 +20,74 @@ export default async function handler(
   }
 
   try {
-    const { name } = req.body;
+    const { name, phone, address } = req.body;
+    
+    // Log detalhado dos dados recebidos
+    console.log('Dados recebidos para atualização:', { name, phone, address });
     
     // Validar dados
     if (name !== undefined && (typeof name !== 'string' || name.trim().length < 2)) {
       return res.status(400).json({ message: 'O nome deve ter pelo menos 2 caracteres' });
     }
 
-    // Se o nome não for fornecido
-    if (name === undefined) {
+    // Se nenhum dado válido foi fornecido
+    if (name === undefined && phone === undefined && address === undefined) {
       return res.status(400).json({ message: 'Nenhum dado válido para atualização' });
     }
 
-    console.log(`Atualizando nome do usuário ${session.user.id}:`, name);
+    // Buscar usuário atual para comparar com os novos dados
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { name: true, phone: true, address: true }
+    });
 
-    // Atualizar apenas o nome do usuário no banco de dados
+    if (!currentUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    // Verificar se há mudanças reais para persistir
+    const hasChanges = 
+      (name !== undefined && name !== currentUser.name) ||
+      (phone !== undefined && phone !== currentUser.phone) ||
+      (address !== undefined && address !== currentUser.address);
+
+    if (!hasChanges) {
+      return res.status(200).json({
+        ...currentUser,
+        id: session.user.id,
+        email: session.user.email,
+        isPersisted: true,
+        message: 'Nenhuma alteração detectada'
+      });
+    }
+
+    console.log(`Atualizando dados do usuário ${session.user.id}:`, { name, phone, address });
+
+    // Criar objeto com os dados a serem atualizados
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+
+    // Atualizar os dados do usuário no banco de dados
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
-      data: { name },
+      data: updateData,
       select: {
         id: true,
         email: true,
-        name: true
+        name: true,
+        phone: true,
+        address: true
       }
     });
 
-    // Retornar os campos phone e address como nulos (ou vazios) para compatibilidade com o frontend
+    console.log('Usuário atualizado com sucesso:', updatedUser);
+
     return res.status(200).json({
       ...updatedUser,
-      phone: null,
-      address: null
+      isPersisted: true,
+      message: 'Dados atualizados com sucesso'
     });
   } catch (error) {
     console.error('Erro ao atualizar usuário:', error);

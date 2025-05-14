@@ -7,7 +7,7 @@ import { authOptions } from '../auth/[...nextauth]';
 const BETTING_PHASE_DURATION = 10000; // 10 segundos para apostas
 const MIN_BET_AMOUNT = 5;             // Aposta mínima: R$ 5,00
 const MAX_BET_AMOUNT = 1000;          // Aposta máxima: R$ 1000,00
-const DAILY_BET_LIMIT = 5000;         // Limite diário: R$ 5000,00
+const DEFAULT_DAILY_BET_LIMIT = 5000; // Limite diário padrão: R$ 5000,00
 
 export default async function handler(
   req: NextApiRequest,
@@ -81,6 +81,9 @@ export default async function handler(
           });
         }
 
+        // Obter o limite diário personalizado do usuário ou usar o valor padrão
+        const userDailyLimit = user.dailyBetLimit || DEFAULT_DAILY_BET_LIMIT;
+
         // Verificar limite diário de apostas
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
@@ -103,10 +106,10 @@ export default async function handler(
         
         const totalDailyBets = dailyBets.reduce((sum, bet) => sum + bet.amount, 0) + betAmount;
         
-        if (totalDailyBets > DAILY_BET_LIMIT) {
+        if (totalDailyBets > userDailyLimit) {
           return res.status(400).json({ 
-            message: `Você atingiu o limite diário de apostas (R$ ${DAILY_BET_LIMIT.toFixed(2)})`,
-            dailyLimit: DAILY_BET_LIMIT,
+            message: `Você atingiu o limite diário de apostas (R$ ${userDailyLimit.toFixed(2)})`,
+            dailyLimit: userDailyLimit,
             currentDailyTotal: totalDailyBets - betAmount
           });
         }
@@ -207,34 +210,128 @@ export default async function handler(
           },
         });
         
-        // 4. Atualizar o saldo do usuário
-        const updatedUser = await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            balance: {
-              decrement: betAmount,
+        // 4. Atualizar o saldo do usuário e o total de apostas
+        try {
+          const updatedUser = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              balance: {
+                decrement: betAmount,
+              },
+              totalBets: {
+                increment: betAmount,
+              }
             },
-          },
-          select: {
-            balance: true
-          }
-        });
+            select: {
+              balance: true,
+              totalBets: true
+            }
+          });
 
-        console.log('Aposta realizada com sucesso:', bet.id);
-        
-        // Incluir informações adicionais na resposta
-        return res.status(201).json({
-          id: bet.id,
-          amount: bet.amount,
-          type: bet.type,
-          createdAt: bet.createdAt,
-          newBalance: updatedUser.balance,
-          limits: {
-            min: MIN_BET_AMOUNT,
-            max: MAX_BET_AMOUNT,
-            daily: DAILY_BET_LIMIT
+          console.log('Aposta realizada com sucesso:', bet.id);
+          console.log('Total de apostas atualizado:', updatedUser.totalBets);
+          
+          // Incluir informações adicionais na resposta
+          return res.status(201).json({
+            id: bet.id,
+            amount: bet.amount,
+            type: bet.type,
+            createdAt: bet.createdAt,
+            newBalance: updatedUser.balance,
+            totalBets: updatedUser.totalBets,
+            limits: {
+              min: MIN_BET_AMOUNT,
+              max: MAX_BET_AMOUNT,
+              daily: userDailyLimit
+            }
+          });
+        } catch (updateError) {
+          // Se houve erro ao atualizar totalBets, podemos tentar uma abordagem alternativa
+          console.error('Erro ao atualizar totalBets:', updateError);
+          
+          try {
+            // Primeiro, atualizar apenas o saldo
+            const updatedUser = await prisma.user.update({
+              where: { id: user.id },
+              data: {
+                balance: {
+                  decrement: betAmount,
+                }
+              },
+              select: {
+                balance: true,
+                totalBets: true
+              }
+            });
+            
+            // Em seguida, fazer uma segunda tentativa específica para o totalBets
+            try {
+              const totalBetsUpdate = await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                  totalBets: {
+                    increment: betAmount,
+                  }
+                },
+                select: {
+                  totalBets: true
+                }
+              });
+              
+              console.log('TotalBets atualizado na segunda tentativa:', totalBetsUpdate.totalBets);
+              
+              return res.status(201).json({
+                id: bet.id,
+                amount: bet.amount,
+                type: bet.type,
+                createdAt: bet.createdAt,
+                newBalance: updatedUser.balance,
+                totalBets: totalBetsUpdate.totalBets,
+                limits: {
+                  min: MIN_BET_AMOUNT,
+                  max: MAX_BET_AMOUNT,
+                  daily: userDailyLimit
+                }
+              });
+            } catch (totalBetsError) {
+              console.error('Falha na segunda tentativa de atualizar totalBets:', totalBetsError);
+              // Prosseguir com a resposta, mesmo sem atualizar o totalBets
+            }
+          
+            console.log('Aposta realizada com sucesso (com atualização parcial):', bet.id);
+            
+            // Incluir informações adicionais na resposta
+            return res.status(201).json({
+              id: bet.id,
+              amount: bet.amount,
+              type: bet.type,
+              createdAt: bet.createdAt,
+              newBalance: updatedUser.balance,
+              totalBets: updatedUser.totalBets,
+              limits: {
+                min: MIN_BET_AMOUNT,
+                max: MAX_BET_AMOUNT,
+                daily: userDailyLimit
+              }
+            });
+          } catch (balanceError) {
+            console.error('Erro crítico ao atualizar saldo:', balanceError);
+            // Aqui temos um problema mais sério: a aposta foi criada mas o saldo não foi atualizado
+            
+            return res.status(201).json({
+              id: bet.id,
+              amount: bet.amount,
+              type: bet.type,
+              createdAt: bet.createdAt,
+              warning: "A aposta foi registrada, mas ocorreu um erro ao atualizar seu saldo. Por favor, atualize a página.",
+              limits: {
+                min: MIN_BET_AMOUNT,
+                max: MAX_BET_AMOUNT,
+                daily: userDailyLimit
+              }
+            });
           }
-        });
+        }
       } catch (error) {
         console.error('Erro ao criar aposta:', error);
         

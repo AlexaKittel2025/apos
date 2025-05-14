@@ -22,13 +22,37 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     setIsLoadingBalance(true);
     try {
-      const response = await fetch('/api/user/balance');
+      const response = await fetch(`/api/user/balance?_=${new Date().getTime()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setUserBalance(data.balance);
         return data.balance;
       } else {
         console.error('Erro ao buscar saldo: Resposta não-OK', await response.text());
+        
+        try {
+          console.log('Tentando buscar saldo novamente...');
+          const retryResponse = await fetch(`/api/user/balance?retry=1&_=${new Date().getTime()}`, {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
+          });
+          
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            setUserBalance(retryData.balance);
+            return retryData.balance;
+          }
+        } catch (retryError) {
+          console.error('Erro na segunda tentativa de buscar saldo:', retryError);
+        }
       }
     } catch (error) {
       console.error('Erro ao buscar saldo:', error);

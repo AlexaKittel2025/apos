@@ -7,6 +7,8 @@ import { prisma } from '@/lib/prisma';
 interface ExtendedUser extends User {
   id: string;
   role: string;
+  phone?: string | null;
+  address?: string | null;
 }
 
 // Estender a sessão do NextAuth para incluir nossas propriedades personalizadas
@@ -18,6 +20,8 @@ declare module "next-auth" {
       email?: string | null;
       image?: string | null;
       role: string;
+      phone?: string | null;
+      address?: string | null;
     }
   }
 }
@@ -83,6 +87,8 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.name,
             role: user.role,
+            phone: user.phone,
+            address: user.address
           } as ExtendedUser;
         } catch (error) {
           console.error('ERRO DURANTE AUTENTICAÇÃO:', error);
@@ -105,6 +111,8 @@ export const authOptions: NextAuthOptions = {
         console.log('Criando JWT para usuário:', user.email);
         token.id = (user as ExtendedUser).id;
         token.role = (user as ExtendedUser).role;
+        token.phone = (user as ExtendedUser).phone;
+        token.address = (user as ExtendedUser).address;
       }
       return token;
     },
@@ -113,6 +121,8 @@ export const authOptions: NextAuthOptions = {
         console.log('Criando sessão para token:', token);
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.phone = token.phone as string | null;
+        session.user.address = token.address as string | null;
       }
       return session;
     },
