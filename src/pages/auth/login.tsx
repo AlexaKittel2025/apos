@@ -46,14 +46,16 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8 bg-[#1E1E1E] p-8 rounded-xl shadow-lg border border-gray-800">
         <div className="text-center">
           <div className="flex justify-center mb-4">
-            <Image
-              src="/imagens/logo.png"
-              alt="Logo Din-Din"
-              width={120}
-              height={120}
-              style={{ width: 'auto', height: 'auto' }}
-              priority={true}
-            />
+            <div style={{ position: 'relative', width: '120px', height: '120px' }}>
+              <Image
+                src="/imagens/logo.png"
+                alt="Logo Din-Din"
+                fill
+                sizes="120px"
+                style={{ objectFit: 'contain' }}
+                priority
+              />
+            </div>
           </div>
           <h2 className="text-3xl font-extrabold text-white">
             Bem-vindo ao Din-Din
