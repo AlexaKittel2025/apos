@@ -286,12 +286,12 @@ export default function NovaInterface() {
       setBetType(null);
       setIsBetting(false);
       setResult(null);
-      // Não limpar myBet aqui, isso será gerenciado pelo useEffect baseado no roundId
+      setDisplayResult(null);
+      // Limpar a aposta ao iniciar uma nova rodada
+      setMyBet(null);
+      localStorage.removeItem('currentBet');
       setBets([]);
       setErrorMessage(null);
-      
-      // Remover aposta do localStorage no início de uma nova rodada
-      localStorage.removeItem('currentBet');
       
       // Atualizar o saldo quando uma nova rodada começa
       refreshBalance();
@@ -342,6 +342,13 @@ export default function NovaInterface() {
           const winAmount = myBet.amount * multiplier;
           updateBalance(userBalance + winAmount);
         }
+        
+        // Limpar a aposta após 3 segundos para permitir que o usuário veja o resultado
+        setTimeout(() => {
+          setMyBet(null);
+          localStorage.removeItem('currentBet');
+          console.log('Aposta limpa após exibição do resultado');
+        }, 3000);
       }
       
       // Atualizar o saldo quando uma rodada termina para refletir ganhos/perdas
@@ -682,6 +689,9 @@ export default function NovaInterface() {
         }
       } catch (error) {
         console.error('Erro ao verificar aposta salva:', error);
+        // Em caso de erro, limpar de qualquer forma
+        setMyBet(null);
+        localStorage.removeItem('currentBet');
       }
     }
   }, [roundStatus, roundId]);
@@ -1051,9 +1061,24 @@ export default function NovaInterface() {
                 {myBet ? (
                   <div className="py-4 flex justify-between items-center">
                     <span className="font-medium">Sua aposta</span>
-                    <div className={`inline-flex items-center ${myBet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
-                      {myBet.type === 'ABOVE' ? '↑ ACIMA' : '↓ ABAIXO'} 
-                      <span className="ml-2 font-medium">R$ {myBet.amount.toFixed(2)}</span>
+                    <div className="flex items-center">
+                      <div className={`inline-flex items-center ${myBet.type === 'ABOVE' ? 'text-[#3bc37a]' : 'text-[#1a86c7]'}`}>
+                        {myBet.type === 'ABOVE' ? '↑ ACIMA' : '↓ ABAIXO'} 
+                        <span className="ml-2 font-medium">R$ {myBet.amount.toFixed(2)}</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setMyBet(null);
+                          localStorage.removeItem('currentBet');
+                        }}
+                        className="ml-3 text-red-400 hover:text-red-300"
+                        title="Limpar aposta"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 ) : (
