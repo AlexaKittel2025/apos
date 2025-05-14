@@ -43,8 +43,8 @@ interface GameState {
 }
 
 // Constantes de tempo
-const BETTING_PHASE_DURATION = 10000; // 10 segundos para apostas
-const ROUND_DURATION = 30000; // 30 segundos para a rodada
+const BETTING_PHASE_DURATION = 5000; // 5 segundos para apostas
+const ROUND_DURATION = 20000; // 20 segundos para a rodada em execução
 const WIN_MULTIPLIER = 1.8; // Multiplicador para ganhos (1.8x o valor apostado)
 
 // Estado do jogo

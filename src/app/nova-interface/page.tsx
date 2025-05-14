@@ -65,8 +65,8 @@ export default function NovaInterface() {
   const chatAreaRef = useRef<HTMLDivElement>(null);
   
   // Configuração dos tempos (em segundos)
-  const BETTING_DURATION = 10; // 10 segundos para apostas
-  const RUNNING_DURATION = 30; // 30 segundos para a rodada em execução
+  const BETTING_DURATION = 5; // 5 segundos para apostas
+  const RUNNING_DURATION = 20; // 20 segundos para a rodada em execução
   
   // Simulação de apostas rápidas
   const QUICK_BETS = [5, 10, 20, 50, 100];
