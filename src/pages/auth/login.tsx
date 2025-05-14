@@ -51,8 +51,8 @@ export default function Login() {
               alt="Logo Din-Din"
               width={120}
               height={120}
-              className="h-auto"
-              priority
+              style={{ width: 'auto', height: 'auto' }}
+              priority={true}
             />
           </div>
           <h2 className="text-3xl font-extrabold text-white">

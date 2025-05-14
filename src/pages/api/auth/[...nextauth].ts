@@ -4,7 +4,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { User } from 'next-auth';
 import { prisma } from '@/lib/prisma';
-import { rateLimitMiddleware } from '@/lib/rateLimit';
+import { rateLimitMiddleware, registerSuccessfulAttempt } from '@/lib/rateLimit';
 
 interface ExtendedUser extends User {
   id: string;
@@ -158,9 +158,6 @@ const authOptions: NextAuthOptions = {
 
 // Exportar função para importação em outros arquivos
 export { authOptions };
-
-// Função que importa o sistema de rate limiting apenas quando necessário
-const { registerSuccessfulAttempt } = require('@/lib/rateLimit');
 
 // NextAuth handler com rate limiting adicional
 export default async function auth(req: NextApiRequest, res: NextApiResponse) {
