@@ -5,12 +5,18 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
+// Verificar se a variável de ambiente DATABASE_URL está definida
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error('DATABASE_URL não está definido no ambiente');
+}
+
 // Configuração otimizada do Prisma com pool de conexões
 export const prisma = global.prisma || new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   datasources: {
     db: {
-      url: process.env.DATABASE_URL,
+      url: databaseUrl,
     },
   },
   // Configurações para otimização de performance
@@ -28,11 +34,12 @@ if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
 
 // Função auxiliar para transações
 export const prismaTransaction = async <T>(
-  fn: (prisma: PrismaClient) => Promise<T>
+  fn: (prisma: Omit<PrismaClient, '$transaction'>) => Promise<T>
 ): Promise<T> => {
   try {
+    // Usar a funcionalidade de transação do Prisma
     return await prisma.$transaction(async (tx) => {
-      return await fn(tx as unknown as PrismaClient);
+      return await fn(tx);
     });
   } catch (error) {
     console.error('Erro na transação:', error);

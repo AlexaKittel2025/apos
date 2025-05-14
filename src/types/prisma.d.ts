@@ -1,7 +1,25 @@
 // Este arquivo complementa as definições de tipo do Prisma
 declare module '@prisma/client' {
+  export interface PrismaClientOptions {
+    log?: Array<string>;
+    datasources?: {
+      db: {
+        url: string;
+      };
+    };
+    __internal?: {
+      query?: {
+        connectionLimit?: number;
+      };
+    };
+  }
+
   export class PrismaClient {
-    constructor(options?: { log?: Array<string> });
+    constructor(options?: PrismaClientOptions);
+    
+    // Namespace para transações
+    $transaction<R>(fn: (prisma: Omit<PrismaClient, '$transaction'>) => Promise<R>): Promise<R>;
+    
     user: {
       findUnique(args: any): Promise<any>;
       findMany(args: any): Promise<any[]>;
