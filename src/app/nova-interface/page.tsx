@@ -42,9 +42,20 @@ export default function NovaInterface() {
   const [playerCount, setPlayerCount] = useState(1);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const [myBet, setMyBet] = useState<{amount: number, type: 'ABOVE' | 'BELOW'} | null>(null);
+  const [myBet, setMyBet] = useState<{amount: number, type: 'ABOVE' | 'BELOW', roundId?: string} | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [dailyBetTotal, setDailyBetTotal] = useState(0);
+  const [dailyBetTotal, setDailyBetTotal] = useState<number>(() => {
+    try {
+      const savedTotal = localStorage.getItem('dailyBetTotal');
+      if (savedTotal && !isNaN(parseFloat(savedTotal))) {
+        return parseFloat(savedTotal);
+      }
+      return 0;
+    } catch (error) {
+      console.error('Erro ao recuperar total de apostas diárias:', error);
+      return 0;
+    }
+  });
   const [dailyBetLimit, setDailyBetLimit] = useState(DAILY_BET_LIMIT); // Usar o valor constante como padrão
   const [roundId, setRoundId] = useState<string | null>(null);
   const [socketInitialized, setSocketInitialized] = useState(false);
@@ -256,9 +267,12 @@ export default function NovaInterface() {
       setBetType(null);
       setIsBetting(false);
       setResult(null);
-      setMyBet(null);
+      // Não limpar myBet aqui, isso será gerenciado pelo useEffect baseado no roundId
       setBets([]);
       setErrorMessage(null);
+      
+      // Remover aposta do localStorage no início de uma nova rodada
+      localStorage.removeItem('currentBet');
       
       // Atualizar o saldo quando uma nova rodada começa
       refreshBalance();
@@ -279,11 +293,29 @@ export default function NovaInterface() {
       
       setRoundStatus('finished');
       
-      // Se temos uma aposta e ganhamos, atualizar o saldo imediatamente para feedback visual
+      // Atualizar aposta com resultado
       if (myBet) {
+        // Verificar se ganhou
         const isWinner = 
           (myBet.type === 'ABOVE' && data.result < 50) || 
           (myBet.type === 'BELOW' && data.result >= 50);
+        
+        // Salvar o resultado no localStorage, mas manter a aposta visível
+        try {
+          const savedBet = localStorage.getItem('currentBet');
+          if (savedBet) {
+            const parsedBet = JSON.parse(savedBet);
+            const updatedBet = {
+              ...parsedBet,
+              result: data.result,
+              displayResult: data.displayResult || Math.round(100 - data.result),
+              isWinner: isWinner
+            };
+            localStorage.setItem('currentBet', JSON.stringify(updatedBet));
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar aposta com resultado:', error);
+        }
         
         if (isWinner) {
           // Usar o multiplicador recebido do servidor, ou o padrão caso não receba
@@ -435,11 +467,12 @@ export default function NovaInterface() {
         // Aposta feita com sucesso
         const betResponse = await response.json();
         
-        // Registrar a aposta do jogador para referência
-        setMyBet({
+        // Registrar a aposta do jogador para referência e salvar no localStorage
+        const myNewBet = {
           amount: selectedBet,
           type: betType
-        });
+        };
+        updateMyBet(myNewBet);
         
         // Atualizar o saldo com o valor retornado pela API
         if (betResponse.newBalance !== undefined) {
@@ -450,7 +483,13 @@ export default function NovaInterface() {
         }
         
         // Atualizar o total de apostas diárias
-        setDailyBetTotal(prev => prev + selectedBet);
+        if (betResponse.dailyTotal !== undefined) {
+          // Usar o valor retornado pela API, se disponível
+          setDailyBetTotal(betResponse.dailyTotal);
+        } else {
+          // Fallback: atualizar localmente
+          setDailyBetTotal(prev => prev + selectedBet);
+        }
         
         // Atualizar estatísticas do usuário após aposta bem-sucedida
         try {
@@ -460,6 +499,18 @@ export default function NovaInterface() {
               'Cache-Control': 'no-cache',
               'Pragma': 'no-cache'
             }
+          }).then(response => {
+            if (response.ok) {
+              return response.json();
+            }
+            throw new Error('Falha ao atualizar estatísticas');
+          }).then(data => {
+            // Atualizar o total de apostas diárias com o valor mais preciso da API
+            if (data && typeof data.dailyTotal === 'number') {
+              setDailyBetTotal(data.dailyTotal);
+            }
+          }).catch(err => {
+            console.error('Erro ao processar resposta de estatísticas:', err);
           });
         } catch (statsError) {
           console.error('Erro ao atualizar estatísticas após aposta:', statsError);
@@ -473,31 +524,6 @@ export default function NovaInterface() {
             type: betType
           });
         }
-
-        // Incluir informações adicionais na resposta
-        return res.status(201).json({
-          id: bet.id,
-          amount: bet.amount,
-          type: bet.type,
-          createdAt: bet.createdAt,
-          newBalance: updatedUser.balance,
-          totalBets: updatedUser.totalBets,
-          rewards: {
-            addedXP: betRewards.addedXP,
-            addedPoints: betRewards.addedPoints,
-            levelUp: betRewards.levelUp,
-            oldLevel: betRewards.oldLevel,
-            newLevel: betRewards.newLevel,
-            currentXP: updatedUser.xp,
-            currentPoints: updatedUser.loyaltyPoints,
-            bonusMultiplier: userBonusMultiplier
-          },
-          limits: {
-            min: MIN_BET_AMOUNT,
-            max: MAX_BET_AMOUNT,
-            daily: userDailyLimit
-          }
-        });
       } else {
         // Erro ao fazer aposta
         const error = await response.json();
@@ -529,6 +555,195 @@ export default function NovaInterface() {
     return playerName || `Jogador ${playerId.substring(0, 5)}...`;
   };
   
+  // Função para salvar a aposta no localStorage
+  const saveMyBetToStorage = useCallback((bet: {amount: number, type: 'ABOVE' | 'BELOW'} | null, currentRoundId: string | null) => {
+    try {
+      if (bet && currentRoundId) {
+        // Adicionar o roundId à aposta para validação posterior
+        const betWithRoundId = { ...bet, roundId: currentRoundId };
+        localStorage.setItem('currentBet', JSON.stringify(betWithRoundId));
+      } else {
+        // Se a aposta for nula, remover do armazenamento
+        localStorage.removeItem('currentBet');
+      }
+    } catch (error) {
+      console.error('Erro ao salvar aposta no localStorage:', error);
+    }
+  }, []);
+
+  // Função personalizada para atualizar a aposta atual
+  const updateMyBet = useCallback((bet: {amount: number, type: 'ABOVE' | 'BELOW'} | null) => {
+    setMyBet(bet);
+    saveMyBetToStorage(bet, roundId);
+  }, [roundId, saveMyBetToStorage]);
+
+  // Carregar dados de aposta e resultado do localStorage no início
+  useEffect(() => {
+    try {
+      // Verificar se há dados salvos no localStorage
+      const savedBet = localStorage.getItem('currentBet');
+      
+      if (savedBet) {
+        const parsedBet = JSON.parse(savedBet);
+        
+        // Se já temos um roundId, verificar se a aposta é válida para a rodada atual
+        if (roundId) {
+          if (parsedBet.roundId === roundId) {
+            console.log('Aposta encontrada para rodada atual:', parsedBet);
+            
+            // Restaurar a aposta
+            setMyBet({
+              amount: parsedBet.amount,
+              type: parsedBet.type
+            });
+            
+            // Se temos um resultado e rodada está finalizada, exibir o resultado também
+            if (parsedBet.result !== undefined && roundStatus === 'finished') {
+              setResult(parsedBet.result);
+              setDisplayResult(parsedBet.displayResult || Math.round(100 - parsedBet.result));
+            }
+          } else {
+            // Aposta é de uma rodada diferente da atual
+            if (roundStatus === 'betting') {
+              console.log('Removendo aposta de rodada anterior');
+              localStorage.removeItem('currentBet');
+            }
+          }
+        } else {
+          // Não temos roundId ainda, exibir a aposta e esperar pela atualização do jogo
+          console.log('Aposta salva encontrada, aguardando atualização do jogo:', parsedBet);
+          
+          // Restaurar a aposta para exibição
+          setMyBet({
+            amount: parsedBet.amount,
+            type: parsedBet.type
+          });
+          
+          // Se temos um resultado, exibir também
+          if (parsedBet.result !== undefined) {
+            setResult(parsedBet.result);
+            setDisplayResult(parsedBet.displayResult || Math.round(100 - parsedBet.result));
+            setRoundStatus('finished'); // Presumir que estamos na fase de exibição de resultado
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados de aposta do localStorage:', error);
+      localStorage.removeItem('currentBet');
+    }
+  }, []);
+
+  // Limpar a aposta salva apenas quando começar uma nova rodada
+  useEffect(() => {
+    if (roundStatus === 'betting' && roundId !== null) {
+      // Verificar se há uma aposta salva
+      try {
+        const savedBet = localStorage.getItem('currentBet');
+        if (savedBet) {
+          const parsedBet = JSON.parse(savedBet);
+          
+          // Se a aposta for de uma rodada anterior, removê-la
+          if (parsedBet.roundId !== roundId) {
+            console.log('Removendo aposta de rodada anterior');
+            setMyBet(null);
+            localStorage.removeItem('currentBet');
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao verificar aposta salva:', error);
+      }
+    }
+  }, [roundStatus, roundId]);
+  
+  // Atualizar o localStorage quando o resultado for recebido
+  useEffect(() => {
+    if (roundStatus === 'finished' && result !== null && myBet) {
+      try {
+        // Atualizar a aposta no localStorage com o resultado para exibição posterior
+        const savedBet = localStorage.getItem('currentBet');
+        if (savedBet) {
+          const parsedBet = JSON.parse(savedBet);
+          const updatedBet = {
+            ...parsedBet,
+            result: result,
+            displayResult: displayResult,
+            isWinner: (myBet.type === 'ABOVE' && result < 50) || (myBet.type === 'BELOW' && result >= 50)
+          };
+          localStorage.setItem('currentBet', JSON.stringify(updatedBet));
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar aposta com resultado:', error);
+      }
+    }
+  }, [roundStatus, result, displayResult, myBet]);
+
+  // Salvar o total de apostas diárias no localStorage sempre que mudar
+  useEffect(() => {
+    try {
+      localStorage.setItem('dailyBetTotal', dailyBetTotal.toString());
+    } catch (error) {
+      console.error('Erro ao salvar total de apostas diárias:', error);
+    }
+  }, [dailyBetTotal]);
+  
+  // Função para buscar o total de apostas diárias da API
+  const fetchDailyBetTotal = useCallback(async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      console.log('Carregando total de apostas diárias...');
+      const response = await fetch('/api/user/bet-stats');
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && typeof data.dailyTotal === 'number' && !isNaN(data.dailyTotal)) {
+          console.log('Total de apostas carregado:', data.dailyTotal);
+          setDailyBetTotal(data.dailyTotal);
+          // Atualizar o localStorage também
+          localStorage.setItem('dailyBetTotal', data.dailyTotal.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar total de apostas diárias:', error);
+    }
+  }, [session]);
+  
+  // Buscar o total de apostas diárias da API quando o componente for montado
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      fetchDailyBetTotal();
+    }
+  }, [status, session, fetchDailyBetTotal]);
+  
+  // Atualizar o total de apostas diárias quando a página receber foco
+  useEffect(() => {
+    // Esta função será chamada quando o usuário voltar à página
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && session) {
+        console.log('Página visível novamente, atualizando total de apostas diárias...');
+        fetchDailyBetTotal();
+      }
+    };
+    
+    // Esta função será chamada quando a janela receber foco
+    const handleFocus = () => {
+      if (session) {
+        console.log('Janela recebeu foco, atualizando total de apostas diárias...');
+        fetchDailyBetTotal();
+      }
+    };
+    
+    // Adicionar listeners para os eventos
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    // Remover listeners quando o componente for desmontado
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [session, fetchDailyBetTotal]);
+
   if (status === 'loading') {
     return (
       <div className="container mx-auto px-4 py-12 flex justify-center">

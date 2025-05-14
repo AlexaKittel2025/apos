@@ -27,6 +27,7 @@ export default async function handler(
 
     // Inicializar com zero caso não haja dados
     let totalBetAmount = 0;
+    let dailyTotal = 0;
 
     // Buscar todas as apostas do usuário sem filtro de tempo
     const allBets = await prisma.bet.findMany({
@@ -35,12 +36,23 @@ export default async function handler(
       },
       select: {
         amount: true,
+        createdAt: true,
       },
     });
 
     // Calcular o total apostado (soma de todos os valores)
     if (allBets && allBets.length > 0) {
       totalBetAmount = allBets.reduce((sum, bet) => sum + (bet.amount || 0), 0);
+      
+      // Calcular o total apostado hoje
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Início do dia atual
+      
+      dailyTotal = allBets
+        .filter(bet => new Date(bet.createdAt) >= today)
+        .reduce((sum, bet) => sum + (bet.amount || 0), 0);
+        
+      console.log(`Total apostado hoje por ${session.user.id}: R$ ${dailyTotal.toFixed(2)}`);
     }
 
     // Se o usuário existir e o valor no banco for diferente do calculado, atualizar
@@ -62,6 +74,7 @@ export default async function handler(
     // Retornar estatísticas para o frontend
     return res.status(200).json({
       totalBets: totalBetAmount,
+      dailyTotal: dailyTotal,
       betCount: allBets.length,
       updatedAt: new Date().toISOString()
     });
@@ -70,6 +83,7 @@ export default async function handler(
     // Retornar dados vazios em vez de erro 500 para não bloquear a UI
     return res.status(200).json({
       totalBets: 0,
+      dailyTotal: 0,
       betCount: 0,
       updatedAt: new Date().toISOString(),
       error: 'Erro ao processar dados, usando valores padrão'

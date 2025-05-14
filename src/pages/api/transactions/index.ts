@@ -117,7 +117,10 @@ export default async function handler(
 
   if (req.method === 'GET') {
     try {
-      console.log('Buscando transações do usuário:', session.user.id);
+      // Parâmetro opcional: limitar o número de transações retornadas
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      
+      // Buscar transações recentes do usuário
       const transactions = await prisma.transaction.findMany({
         where: {
           userId: session.user.id,
@@ -126,17 +129,19 @@ export default async function handler(
           }
         },
         orderBy: {
-          createdAt: 'desc',
+          createdAt: 'desc'
         },
+        take: Math.min(limit, 50) // Máximo de 50 transações
       });
-
+      
+      console.log(`Retornando ${transactions.length} transações para o usuário ${session.user.id}`);
+      
       return res.status(200).json(transactions);
     } catch (error) {
       console.error('Erro ao buscar transações:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
-      return res.status(500).json({ message: errorMessage });
+      return res.status(500).json({ error: 'Erro ao processar a requisição' });
     }
   }
 
-  return res.status(405).json({ message: 'Método não permitido' });
+  return res.status(405).json({ error: 'Método não permitido' });
 } 

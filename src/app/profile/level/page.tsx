@@ -95,19 +95,135 @@ export default function LevelPage() {
   const fetchLevelData = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/user/level');
+      setError(null);
+      
+      // Definir um timeout para a requisição
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      // Fazer a requisição com timeout
+      const response = await fetch('/api/user/level', {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
-        throw new Error('Falha ao carregar dados de nível');
+        if (response.status === 401) {
+          // Problema de autenticação
+          throw new Error('Sessão expirada. Por favor, faça login novamente.');
+        } else if (response.status === 404) {
+          // Usuário não encontrado no banco de dados
+          throw new Error('Dados de usuário não encontrados.');
+        } else {
+          // Outro erro do servidor
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Falha ao carregar dados de nível');
+        }
       }
       
       const data = await response.json();
+      
+      // Verificar se os dados são válidos e se o currentLevel existe
+      if (!data.currentLevel) {
+        console.warn('currentLevel não encontrado nos dados retornados:', data);
+        
+        // Se o usuário existir mas não tiver nível, pode ser um problema de inicialização
+        if (data.user) {
+          console.log('Tentando inicializar níveis de jogador...');
+          
+          try {
+            // Tentar buscar ou criar dados de nível
+            await populatePlayerLevels();
+            
+            // Tentar novamente depois de esperar um pouco
+            setTimeout(() => fetchLevelData(), 2000);
+          } catch (initError) {
+            console.error('Erro ao inicializar níveis:', initError);
+            throw new Error('Não foi possível carregar dados de nível. O sistema de níveis pode precisar ser inicializado.');
+          }
+          return;
+        }
+      }
+      
       setLevelData(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar dados de nível:', err);
-      setError('Não foi possível carregar seus dados de nível. Tente novamente mais tarde.');
+      
+      if (err.name === 'AbortError') {
+        setError('A requisição demorou muito tempo. Por favor, tente novamente.');
+      } else {
+        setError(err.message || 'Não foi possível carregar seus dados de nível. Tente novamente mais tarde.');
+      }
+      
+      // Criar dados mínimos para evitar mostrar mensagem de erro
+      setLevelData({
+        user: {
+          id: session?.user?.id || 'temp-id',
+          name: session?.user?.name || 'Usuário',
+          level: 1,
+          xp: 0,
+          loyaltyPoints: 0,
+          totalPlayed: 0,
+          daysActive: 0,
+          lastActive: new Date().toISOString()
+        },
+        currentLevel: {
+          id: 'default-level',
+          level: 1,
+          name: 'Iniciante',
+          requiredXP: 0,
+          bonusMultiplier: 0,
+          loyaltyMultiplier: 1,
+          dailyBonus: 0,
+          description: 'Nível inicial'
+        },
+        nextLevel: {
+          id: 'next-level',
+          level: 2,
+          name: 'Amador',
+          requiredXP: 1000,
+          bonusMultiplier: 0.01,
+          loyaltyMultiplier: 1.1,
+          dailyBonus: 5,
+          description: 'Próximo nível'
+        },
+        progress: 0,
+        xpRequired: 1000,
+        xpCurrent: 0,
+        availableRewards: [],
+        redeemedRewards: []
+      });
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  // Função para garantir que o sistema de níveis está inicializado
+  const populatePlayerLevels = async () => {
+    try {
+      // Verificar se há níveis cadastrados
+      const checkResponse = await fetch('/api/system/check-levels');
+      const checkData = await checkResponse.json();
+      
+      if (!checkData.initialized) {
+        console.log('Sistema de níveis não inicializado, tentando inicializar...');
+        // Tentar inicializar o sistema de níveis
+        const initResponse = await fetch('/api/system/init-levels');
+        
+        if (!initResponse.ok) {
+          throw new Error('Não foi possível inicializar o sistema de níveis');
+        }
+        
+        return true;
+      }
+      
+      return checkData.initialized;
+    } catch (error) {
+      console.error('Erro ao verificar/inicializar níveis:', error);
+      return false;
     }
   };
 
@@ -120,6 +236,8 @@ export default function LevelPage() {
         rewardId
       });
       
+      console.log(`Iniciando resgate da recompensa ${rewardId}`);
+      
       const response = await fetch('/api/user/rewards/redeem', {
         method: 'POST',
         headers: {
@@ -129,10 +247,14 @@ export default function LevelPage() {
       });
       
       const data = await response.json();
+      console.log('Resposta do resgate:', data);
       
       if (!response.ok) {
         throw new Error(data.error || 'Falha ao resgatar recompensa');
       }
+      
+      // Verificar a transação gerada após o resgate
+      await verifyRewardTransaction(data);
       
       // Atualizar os dados após resgate bem-sucedido
       refreshBalance();
@@ -163,8 +285,51 @@ export default function LevelPage() {
     }
   };
 
+  // Verificar se a transação relacionada foi criada
+  const verifyRewardTransaction = async (redeemData: any) => {
+    try {
+      if (!redeemData.reward || !redeemData.updatedBalance) {
+        console.log('Dados de recompensa incompletos:', redeemData);
+        return;
+      }
+      
+      // Aguardar um pouco para dar tempo da transação ser processada
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Buscar as transações recentes
+      const response = await fetch('/api/transactions?limit=5');
+      if (!response.ok) {
+        console.warn('Não foi possível verificar transações recentes');
+        return;
+      }
+      
+      const transactions = await response.json();
+      console.log('Transações recentes:', transactions);
+      
+      // Verificar se existe alguma transação relacionada à recompensa
+      const rewardTransaction = transactions.find((tx: any) => {
+        try {
+          const details = JSON.parse(tx.details || '{}');
+          return details.source === 'reward' && details.rewardId === redeemData.reward.id;
+        } catch (e) {
+          return false;
+        }
+      });
+      
+      if (rewardTransaction) {
+        console.log('Transação de recompensa encontrada:', rewardTransaction);
+      } else {
+        console.warn('Transação de recompensa não encontrada nas transações recentes');
+      }
+    } catch (error) {
+      console.error('Erro ao verificar transação:', error);
+    }
+  };
+
   // Renderizar badges para benefícios de nível
-  const renderLevelBenefits = (level: PlayerLevel) => {
+  const renderLevelBenefits = (level: any) => {
+    if (!level) return null;
+    
     return (
       <div className="flex flex-wrap gap-2 mt-3">
         {level.bonusMultiplier > 0 && (
@@ -265,13 +430,34 @@ export default function LevelPage() {
           <CardContent className="pt-6">
             <div className="text-center text-red-500">
               <p>{error}</p>
-              <Button 
-                variant="outline" 
-                className="mt-4"
-                onClick={() => fetchLevelData()}
-              >
-                Tentar Novamente
-              </Button>
+              <div className="flex flex-col space-y-2 mt-4">
+                <Button 
+                  variant="outline"
+                  onClick={() => fetchLevelData()}
+                >
+                  Tentar Novamente
+                </Button>
+                <Button 
+                  variant="primary"
+                  onClick={async () => {
+                    try {
+                      setError(null);
+                      setIsLoading(true);
+                      
+                      // Tentar inicializar o sistema de níveis
+                      await populatePlayerLevels();
+                      
+                      // Esperar um pouco e tentar novamente
+                      setTimeout(() => fetchLevelData(), 1000);
+                    } catch (err) {
+                      setError('Falha ao inicializar sistema de níveis. Por favor, contate o suporte.');
+                      setIsLoading(false);
+                    }
+                  }}
+                >
+                  Inicializar Sistema de Níveis
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -286,13 +472,33 @@ export default function LevelPage() {
           <CardContent className="pt-6">
             <div className="text-center">
               <p>Não foi possível carregar seus dados de nível.</p>
-              <Button 
-                variant="outline" 
-                className="mt-4"
-                onClick={() => fetchLevelData()}
-              >
-                Tentar Novamente
-              </Button>
+              <div className="flex flex-col space-y-2 mt-4">
+                <Button 
+                  variant="outline"
+                  onClick={() => fetchLevelData()}
+                >
+                  Tentar Novamente
+                </Button>
+                <Button 
+                  variant="primary"
+                  onClick={async () => {
+                    try {
+                      setIsLoading(true);
+                      
+                      // Tentar inicializar o sistema de níveis
+                      await populatePlayerLevels();
+                      
+                      // Esperar um pouco e tentar novamente
+                      setTimeout(() => fetchLevelData(), 1000);
+                    } catch (err) {
+                      setError('Falha ao inicializar sistema de níveis. Por favor, contate o suporte.');
+                      setIsLoading(false);
+                    }
+                  }}
+                >
+                  Inicializar Sistema de Níveis
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -310,10 +516,10 @@ export default function LevelPage() {
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>
-            Nível {user.level}: {currentLevel.name}
+            Nível {user?.level || '?'}: {currentLevel?.name || 'Carregando...'}
           </CardTitle>
           <CardDescription>
-            XP: {user.xp} pontos • Jogou: {user.totalPlayed} rodadas • Ativo por: {user.daysActive} dias
+            XP: {user?.xp || 0} pontos • Jogou: {user?.totalPlayed || 0} rodadas • Ativo por: {user?.daysActive || 0} dias
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -322,21 +528,25 @@ export default function LevelPage() {
             <div className="flex-1">
               <div className="p-4 bg-[#1e1e1e] rounded-lg">
                 <div className="flex items-center gap-4">
-                  {currentLevel.icon && (
+                  {currentLevel?.icon && (
                     <div className="w-16 h-16 rounded-full bg-[#2a2a2a] flex items-center justify-center overflow-hidden">
                       <img 
-                        src={currentLevel.icon} 
-                        alt={`Nível ${currentLevel.level}`} 
+                        src={currentLevel?.icon || '/imagens/levels/default.png'} 
+                        alt={`Nível ${currentLevel?.level || '?'}`} 
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/imagens/levels/default.png';
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const parent = (e.target as HTMLElement).parentElement;
+                          if (parent) {
+                            parent.innerHTML = '👤';
+                          }
                         }}
                       />
                     </div>
                   )}
                   <div>
-                    <h3 className="text-xl font-semibold">{currentLevel.name}</h3>
-                    <p className="text-sm text-gray-400">{currentLevel.description}</p>
+                    <h3 className="text-xl font-semibold">{currentLevel?.name}</h3>
+                    <p className="text-sm text-gray-400">{currentLevel?.description}</p>
                   </div>
                 </div>
                 
@@ -350,7 +560,7 @@ export default function LevelPage() {
                 <div className="p-4 bg-[#1e1e1e] rounded-lg">
                   <div className="mb-4">
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm">Progresso para Nível {nextLevel.level}</span>
+                      <span className="text-sm">Progresso para Nível {nextLevel?.level || 'próximo'}</span>
                       <span className="text-sm font-medium">{progress}%</span>
                     </div>
                     <Progress value={progress} className="h-2" />
@@ -361,8 +571,8 @@ export default function LevelPage() {
                   </div>
                   
                   <div className="mt-4">
-                    <h4 className="text-sm font-medium mb-2">Próximo Nível: {nextLevel.name}</h4>
-                    <p className="text-xs text-gray-400 mb-2">{nextLevel.description}</p>
+                    <h4 className="text-sm font-medium mb-2">Próximo Nível: {nextLevel?.name || 'Carregando...'}</h4>
+                    <p className="text-xs text-gray-400 mb-2">{nextLevel?.description || ''}</p>
                     
                     {renderLevelBenefits(nextLevel)}
                   </div>
@@ -390,7 +600,7 @@ export default function LevelPage() {
             <p className="text-sm opacity-90">Use seus pontos para resgatar recompensas especiais</p>
           </div>
           <div className="text-3xl font-bold mt-2 md:mt-0">
-            {user.loyaltyPoints} pontos
+            {user?.loyaltyPoints || 0} pontos
           </div>
         </div>
       </div>
@@ -408,14 +618,27 @@ export default function LevelPage() {
                 <div 
                   key={reward.id} 
                   className={`p-4 border rounded-lg ${
-                    user.loyaltyPoints >= reward.pointsCost
+                    user?.loyaltyPoints >= reward.pointsCost
                       ? 'border-[#3bc37a] bg-[#3bc37a] bg-opacity-5'
                       : 'border-gray-700 bg-[#1e1e1e]'
                   }`}
                 >
                   <div className="flex gap-3 items-start mb-2">
                     <div className="w-10 h-10 flex items-center justify-center rounded-full bg-[#2a2a2a] text-xl">
-                      {getRewardTypeIcon(reward.type)}
+                      {reward.icon ? (
+                        <img 
+                          src={reward.icon} 
+                          alt={reward.name}
+                          className="w-full h-full object-cover rounded-full"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const parent = (e.target as HTMLElement).parentElement;
+                            if (parent) {
+                              parent.innerHTML = '👤';
+                            }
+                          }}
+                        />
+                      ) : getRewardTypeIcon(reward.type)}
                     </div>
                     <div>
                       <h3 className="font-medium">{reward.name}</h3>
@@ -430,10 +653,10 @@ export default function LevelPage() {
                       {reward.pointsCost} pontos
                     </div>
                     <Button
-                      variant={user.loyaltyPoints >= reward.pointsCost ? "primary" : "secondary"}
+                      variant={user?.loyaltyPoints >= reward.pointsCost ? "primary" : "secondary"}
                       size="sm"
                       disabled={
-                        user.loyaltyPoints < reward.pointsCost || 
+                        user?.loyaltyPoints < reward.pointsCost || 
                         redemptionStatus.loading ||
                         redemptionStatus.rewardId === reward.id
                       }
@@ -445,9 +668,9 @@ export default function LevelPage() {
                     </Button>
                   </div>
                   
-                  {user.loyaltyPoints < reward.pointsCost && (
+                  {user?.loyaltyPoints < reward.pointsCost && (
                     <div className="mt-2 text-xs text-gray-400">
-                      Você precisa de mais {reward.pointsCost - user.loyaltyPoints} pontos
+                      Você precisa de mais {reward.pointsCost - user?.loyaltyPoints} pontos
                     </div>
                   )}
                 </div>

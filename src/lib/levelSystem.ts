@@ -62,8 +62,9 @@ const DAY_ACTIVITY_THRESHOLD = 1; // Quantidade de apostas necessárias para con
 
 /**
  * Inicializar o sistema de níveis, garantindo que os níveis estejam definidos no banco de dados
+ * @returns Número de níveis criados/encontrados
  */
-export async function initializeLevelSystem() {
+export async function initializeLevelSystem(): Promise<number> {
   // Definir níveis padrão do sistema
   const defaultLevels: Omit<PlayerLevel, 'id' | 'createdAt' | 'updatedAt'>[] = [
     {
@@ -74,7 +75,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.0,
       dailyBonus: 0,
       description: 'Bem-vindo ao jogo! Comece sua jornada.',
-      icon: '/imagens/levels/level1.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 2,
@@ -84,7 +85,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.1,
       dailyBonus: 5,
       description: 'Seus primeiros passos foram dados. Continue apostando!',
-      icon: '/imagens/levels/level2.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 3,
@@ -94,7 +95,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.2,
       dailyBonus: 10,
       description: 'Você está pegando o jeito!',
-      icon: '/imagens/levels/level3.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 4,
@@ -104,7 +105,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.3,
       dailyBonus: 15,
       description: 'Um competidor nato. Suas habilidades estão melhorando.',
-      icon: '/imagens/levels/level4.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 5,
@@ -114,7 +115,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.4,
       dailyBonus: 20,
       description: 'Um especialista no jogo. Suas apostas são mais certeiras.',
-      icon: '/imagens/levels/level5.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 6,
@@ -124,7 +125,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.5,
       dailyBonus: 25,
       description: 'Alcançou o nível Prata! Bônus especiais desbloqueados.',
-      icon: '/imagens/levels/level6.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 7,
@@ -134,7 +135,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.6,
       dailyBonus: 40,
       description: 'Um jogador de Ouro! Seu prestígio é notável.',
-      icon: '/imagens/levels/level7.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 8,
@@ -144,7 +145,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.7,
       dailyBonus: 60,
       description: 'Nível Platina alcançado! Poucos chegam tão longe.',
-      icon: '/imagens/levels/level8.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 9,
@@ -154,7 +155,7 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 1.8,
       dailyBonus: 90,
       description: 'Um diamante entre jogadores! Acesso a recompensas exclusivas.',
-      icon: '/imagens/levels/level9.png',
+      icon: '/imagens/levels/default.png',
     },
     {
       level: 10,
@@ -164,11 +165,12 @@ export async function initializeLevelSystem() {
       loyaltyMultiplier: 2.0,
       dailyBonus: 150,
       description: 'Você atingiu a maestria! O melhor dos melhores.',
-      icon: '/imagens/levels/level10.png',
+      icon: '/imagens/levels/default.png',
     },
   ];
 
   // Verificar e criar níveis no banco de dados
+  let createdCount = 0;
   for (const levelData of defaultLevels) {
     const existingLevel = await prisma.playerLevel.findUnique({
       where: { level: levelData.level }
@@ -179,6 +181,7 @@ export async function initializeLevelSystem() {
         data: levelData
       });
       console.log(`Nível ${levelData.level} (${levelData.name}) criado com sucesso.`);
+      createdCount++;
     }
   }
 
@@ -190,7 +193,7 @@ export async function initializeLevelSystem() {
       pointsCost: 100,
       type: 'FREE_BET',
       value: 5,
-      icon: '/imagens/rewards/free_bet.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 1
     },
@@ -200,7 +203,7 @@ export async function initializeLevelSystem() {
       pointsCost: 350,
       type: 'FREE_BET',
       value: 20,
-      icon: '/imagens/rewards/free_bet_med.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 3
     },
@@ -210,7 +213,7 @@ export async function initializeLevelSystem() {
       pointsCost: 800,
       type: 'FREE_BET',
       value: 50,
-      icon: '/imagens/rewards/free_bet_large.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 5
     },
@@ -220,7 +223,7 @@ export async function initializeLevelSystem() {
       pointsCost: 200,
       type: 'MULTIPLIER_BOOST',
       value: 0.03,
-      icon: '/imagens/rewards/multiplier_small.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 2
     },
@@ -230,7 +233,7 @@ export async function initializeLevelSystem() {
       pointsCost: 400,
       type: 'MULTIPLIER_BOOST',
       value: 0.05,
-      icon: '/imagens/rewards/multiplier_med.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 4
     },
@@ -240,7 +243,7 @@ export async function initializeLevelSystem() {
       pointsCost: 1000,
       type: 'MULTIPLIER_BOOST',
       value: 0.1,
-      icon: '/imagens/rewards/multiplier_large.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 7
     },
@@ -250,7 +253,7 @@ export async function initializeLevelSystem() {
       pointsCost: 500,
       type: 'CASH_BONUS',
       value: 10,
-      icon: '/imagens/rewards/cash_small.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 2
     },
@@ -260,7 +263,7 @@ export async function initializeLevelSystem() {
       pointsCost: 2000,
       type: 'CASH_BONUS',
       value: 50,
-      icon: '/imagens/rewards/cash_med.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 5
     },
@@ -270,7 +273,7 @@ export async function initializeLevelSystem() {
       pointsCost: 3500,
       type: 'CASH_BONUS',
       value: 100,
-      icon: '/imagens/rewards/cash_large.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 8
     },
@@ -280,13 +283,14 @@ export async function initializeLevelSystem() {
       pointsCost: 300,
       type: 'DAILY_LIMIT_BOOST',
       value: 0.5, // +50%
-      icon: '/imagens/rewards/limit_boost.png',
+      icon: '/imagens/rewards/default.png',
       isActive: true,
       minimumLevel: 3
     }
   ];
 
   // Verificar e criar recompensas no banco de dados
+  let rewardCount = 0;
   for (const rewardData of defaultRewards) {
     const existingReward = await prisma.reward.findFirst({
       where: { 
@@ -301,8 +305,17 @@ export async function initializeLevelSystem() {
         data: rewardData
       });
       console.log(`Recompensa "${rewardData.name}" criada com sucesso.`);
+      rewardCount++;
     }
   }
+
+  // Verificar quantos níveis existem no total
+  const totalLevels = await prisma.playerLevel.count();
+  
+  console.log(`Inicialização concluída: ${createdCount} níveis criados, ${totalLevels} níveis no total`);
+  console.log(`${rewardCount} recompensas criadas.`);
+  
+  return totalLevels;
 }
 
 /**
@@ -538,9 +551,9 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
 
   try {
     // Usar uma transação para garantir consistência
-    await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx) => {
       // Remover pontos do usuário
-      await prisma.user.update({
+      await tx.user.update({
         where: { id: userId },
         data: {
           loyaltyPoints: { decrement: reward.pointsCost },
@@ -549,7 +562,7 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
       });
 
       // Registrar o resgate
-      await prisma.rewardRedemption.create({
+      await tx.rewardRedemption.create({
         data: {
           userId,
           rewardId,
@@ -561,7 +574,7 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
       switch (reward.type) {
         case 'FREE_BET':
           // Adicionar o valor da aposta gratuita ao saldo
-          await prisma.user.update({
+          await tx.user.update({
             where: { id: userId },
             data: {
               balance: { increment: reward.value }
@@ -569,7 +582,7 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
           });
 
           // Criar uma transação para registrar o bônus
-          await prisma.transaction.create({
+          await tx.transaction.create({
             data: {
               userId,
               amount: reward.value,
@@ -587,7 +600,7 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
 
         case 'CASH_BONUS':
           // Adicionar o valor do bônus ao saldo
-          await prisma.user.update({
+          await tx.user.update({
             where: { id: userId },
             data: {
               balance: { increment: reward.value }
@@ -595,7 +608,7 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
           });
 
           // Criar uma transação para registrar o bônus
-          await prisma.transaction.create({
+          await tx.transaction.create({
             data: {
               userId,
               amount: reward.value,
@@ -616,13 +629,13 @@ export async function redeemReward(userId: string, rewardId: string): Promise<{
           // Para tipos que não precisam de processamento imediato
           break;
       }
-    });
 
-    return { 
-      success: true, 
-      message: `Recompensa "${reward.name}" resgatada com sucesso!`,
-      reward 
-    };
+      return { 
+        success: true, 
+        message: `Recompensa "${reward.name}" resgatada com sucesso!`,
+        reward 
+      };
+    });
   } catch (error) {
     console.error('Erro ao resgatar recompensa:', error);
     return {

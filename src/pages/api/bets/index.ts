@@ -259,6 +259,24 @@ export default async function handler(
               console.error('Erro ao obter multiplicador de bônus:', bonusError);
             }
             
+            // Calcular o total de apostas diárias após a aposta atual
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const dailyBets = await prisma.bet.findMany({
+              where: {
+                userId: user.id,
+                createdAt: {
+                  gte: today
+                }
+              },
+              select: {
+                amount: true
+              }
+            });
+            
+            const dailyTotal = dailyBets.reduce((sum, bet) => sum + bet.amount, 0);
+
             // Incluir informações adicionais na resposta
             return res.status(201).json({
               id: bet.id,
@@ -267,6 +285,7 @@ export default async function handler(
               createdAt: bet.createdAt,
               newBalance: updatedUser.balance,
               totalBets: updatedUser.totalBets,
+              dailyTotal: dailyTotal,
               rewards: {
                 addedXP: betRewards.addedXP,
                 addedPoints: betRewards.addedPoints,

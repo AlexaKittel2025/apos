@@ -42,6 +42,54 @@ declare module '@prisma/client' {
       create(args: any): Promise<any>;
       update(args: any): Promise<any>;
       delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
     };
+    playerLevel: {
+      findUnique(args: any): Promise<any>;
+      findMany(args: any): Promise<any[]>;
+      findFirst(args: any): Promise<any>;
+      create(args: any): Promise<any>;
+      update(args: any): Promise<any>;
+      delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
+    };
+    reward: {
+      findUnique(args: any): Promise<any>;
+      findMany(args: any): Promise<any[]>;
+      findFirst(args: any): Promise<any>;
+      create(args: any): Promise<any>;
+      update(args: any): Promise<any>;
+      delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
+    };
+    rewardRedemption: {
+      findUnique(args: any): Promise<any>;
+      findMany(args: any): Promise<any[]>;
+      findFirst(args: any): Promise<any>;
+      create(args: any): Promise<any>;
+      update(args: any): Promise<any>;
+      delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
+    };
+    systemConfig: {
+      findUnique(args: any): Promise<any>;
+      findMany(args: any): Promise<any[]>;
+      findFirst(args: any): Promise<any>;
+      create(args: any): Promise<any>;
+      update(args: any): Promise<any>;
+      delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
+    };
+    chatMessage: {
+      findUnique(args: any): Promise<any>;
+      findMany(args: any): Promise<any[]>;
+      findFirst(args: any): Promise<any>;
+      create(args: any): Promise<any>;
+      update(args: any): Promise<any>;
+      delete(args: any): Promise<any>;
+      count(args?: any): Promise<number>;
+    };
+    
+    $transaction<T>(fn: (prisma: PrismaClient) => Promise<T>): Promise<T>;
   }
 } 
