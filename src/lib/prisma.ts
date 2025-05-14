@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 
-// Padrão de singleton para evitar múltiplas conexões
+// Usar instância global para evitar múltiplas conexões em ambiente de desenvolvimento
+// https://www.prisma.io/docs/guides/performance-and-optimization/connection-management
+
 declare global {
+  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
@@ -16,8 +19,12 @@ export const prisma = global.prisma || new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });
 
-// Prevenir múltiplas instâncias durante hot reloading no desenvolvimento
-if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
+// Não armazenar em global em produção para evitar vazamento de memória
+if (process.env.NODE_ENV !== 'production') {
+  global.prisma = prisma;
+}
+
+export default prisma;
 
 // Função auxiliar para transações
 export const prismaTransaction = async <T>(

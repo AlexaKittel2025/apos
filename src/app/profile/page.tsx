@@ -57,6 +57,48 @@ export default function ProfilePage() {
   const [showBetLimitModal, setShowBetLimitModal] = useState(false);
   const [newBetLimit, setNewBetLimit] = useState('');
   
+  // Estado para o nível do usuário
+  const [userLevel, setUserLevel] = useState<number>(1);
+  
+  // Função para obter o nome do nível com base no número
+  const getLevelName = (level: number): string => {
+    switch(level) {
+      case 1: return 'Iniciante';
+      case 2: return 'Amador';
+      case 3: return 'Aprendiz';
+      case 4: return 'Competidor';
+      case 5: return 'Especialista';
+      case 6: return 'Prata';
+      case 7: return 'Ouro';
+      case 8: return 'Platina';
+      case 9: return 'Diamante';
+      case 10: return 'Mestre';
+      default: return `Nível ${level}`;
+    }
+  };
+  
+  // Carregar o nível do usuário
+  useEffect(() => {
+    if (session?.user?.id) {
+      // Buscar o nível do usuário da API
+      fetch('/api/user/level')
+        .then(response => {
+          if (response.ok) {
+            return response.json();
+          }
+          return { user: { level: 1 } };
+        })
+        .then(data => {
+          if (data?.user?.level) {
+            setUserLevel(data.user.level);
+          }
+        })
+        .catch(error => {
+          console.error('Erro ao buscar nível do usuário:', error);
+        });
+    }
+  }, [session?.user?.id]);
+  
   // Função para buscar todas as apostas do usuário
   const fetchUserBets = async () => {
     if (!session) return;
@@ -817,45 +859,30 @@ export default function ProfilePage() {
                 </Button>
               </div>
               
+              {/* Novo card de Níveis e Recompensas */}
               <div className="bg-gray-800 bg-opacity-30 rounded-lg p-4">
-                <h3 className="text-lg font-medium mb-2">Resumo de Apostas</h3>
-                <p className="text-sm text-gray-400 mb-4">Total de apostas realizadas desde o início.</p>
+                <h3 className="text-lg font-medium mb-2">Níveis e Recompensas</h3>
+                <p className="text-sm text-gray-400 mb-4">Suba de nível, ganhe bônus e resgate recompensas exclusivas.</p>
                 
                 <div className="mb-4">
-                  <p className="text-sm text-gray-400">Total apostado:</p>
-                  <p className="text-xl font-bold text-yellow-400">
-                    {loadingBets ? (
-                      <span className="flex items-center">
-                        <span className="mr-2 animate-spin h-3 w-3 border-t-2 border-b-2 border-yellow-500 rounded-full"></span>
-                        Carregando...
-                      </span>
-                    ) : `R$ ${totalBets.toFixed(2)}`}
-                  </p>
+                  <p className="text-sm text-gray-400">Seu nível atual:</p>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] flex items-center justify-center text-white font-bold">
+                      {userLevel}
+                    </div>
+                    <div>
+                      <p className="font-medium">{getLevelName(userLevel)}</p>
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="h-1 w-full bg-gray-700 rounded mb-2">
-                  <div 
-                    className="h-1 bg-yellow-400 rounded" 
-                    style={{ width: `${Math.min(100, (totalBets / dailyBetLimit) * 100)}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-400">
-                  {totalBets > 0 
-                    ? `Suas apostas representam ${Math.min(100, Math.round((totalBets / dailyBetLimit) * 100))}% do seu limite diário`
-                    : 'Nenhuma aposta realizada ainda'
-                  }
-                </p>
-                
-                <div className="mt-4">
-                  <Button 
-                    variant="secondary"
-                    onClick={fetchUserBets}
-                    className="w-full text-xs py-1"
-                    disabled={loadingBets}
-                  >
-                    {loadingBets ? 'Atualizando...' : 'Atualizar Dados'}
-                  </Button>
-                </div>
+                <Button 
+                  variant="primary"
+                  onClick={() => router.push('/profile/level')}
+                  className="w-full"
+                >
+                  Ver Níveis e Recompensas
+                </Button>
               </div>
               
               <div className="bg-gray-800 bg-opacity-30 rounded-lg p-4">

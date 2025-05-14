@@ -11,6 +11,7 @@ import Image from 'next/image';
 import { io, Socket } from 'socket.io-client';
 import ChatSupport from '@/components/ChatSupport';
 import LastResults from '@/components/LastResults';
+import LevelCard from '@/components/LevelCard';
 
 // Constantes de segurança (espelhando os valores do servidor)
 const MIN_BET_AMOUNT = 5;      // Aposta mínima: R$ 5,00
@@ -472,6 +473,31 @@ export default function NovaInterface() {
             type: betType
           });
         }
+
+        // Incluir informações adicionais na resposta
+        return res.status(201).json({
+          id: bet.id,
+          amount: bet.amount,
+          type: bet.type,
+          createdAt: bet.createdAt,
+          newBalance: updatedUser.balance,
+          totalBets: updatedUser.totalBets,
+          rewards: {
+            addedXP: betRewards.addedXP,
+            addedPoints: betRewards.addedPoints,
+            levelUp: betRewards.levelUp,
+            oldLevel: betRewards.oldLevel,
+            newLevel: betRewards.newLevel,
+            currentXP: updatedUser.xp,
+            currentPoints: updatedUser.loyaltyPoints,
+            bonusMultiplier: userBonusMultiplier
+          },
+          limits: {
+            min: MIN_BET_AMOUNT,
+            max: MAX_BET_AMOUNT,
+            daily: userDailyLimit
+          }
+        });
       } else {
         // Erro ao fazer aposta
         const error = await response.json();
@@ -687,6 +713,9 @@ export default function NovaInterface() {
               </Button>
             </CardFooter>
           </Card>
+          
+          {/* Componente de Nível */}
+          <LevelCard compact />
           
           {/* Apostas */}
           <Card variant="bordered">

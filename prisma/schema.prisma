@@ -8,21 +8,31 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  password     String
-  name         String
-  phone        String?
-  address      String?
-  balance      Float         @default(0)
-  role         Role          @default(USER)
-  dailyBetLimit Float        @default(5000) // Limite diário de apostas padrão: R$ 5000
-  totalBets    Float         @default(0)    // Total de apostas realizadas
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  bets         Bet[]
-  transactions Transaction[]
-  messages     ChatMessage[]
+  id            String        @id @default(cuid())
+  email         String        @unique
+  password      String
+  name          String
+  phone         String?
+  address       String?
+  balance       Float         @default(0)
+  role          Role          @default(USER)
+  dailyBetLimit Float         @default(5000) // Limite diário de apostas padrão: R$ 5000
+  totalBets     Float         @default(0)    // Total de apostas realizadas
+  
+  // Sistema de níveis e recompensas
+  level         Int           @default(1)    // Nível do jogador
+  xp            Int           @default(0)    // Pontos de experiência
+  loyaltyPoints Int           @default(0)    // Pontos de fidelidade
+  totalPlayed   Int           @default(0)    // Total de rodadas jogadas
+  daysActive    Int           @default(1)    // Dias de atividade
+  lastActive    DateTime      @default(now()) // Última atividade
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  bets          Bet[]
+  transactions  Transaction[]
+  messages      ChatMessage[]
+  rewards       Reward[]      // Relação com as recompensas
 }
 
 model Bet {
@@ -85,6 +95,48 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 }
 
+// Novo modelo para definir os níveis e seus requisitos/benefícios
+model PlayerLevel {
+  id                 String   @id @default(cuid())
+  level              Int      @unique
+  name               String   // Nome do nível (ex: "Iniciante", "Prata", "Ouro", etc.)
+  requiredXP         Int      // XP necessário para alcançar este nível
+  bonusMultiplier    Float    @default(0)  // Bônus de multiplicador para apostas (em %)
+  loyaltyMultiplier  Float    @default(1)  // Multiplicador de pontos de fidelidade
+  dailyBonus         Int      @default(0)  // Bônus diário de pontos
+  description        String?  // Descrição do nível
+  icon               String?  // URL para o ícone do nível
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// Modelo para recompensas que podem ser compradas com pontos de fidelidade
+model Reward {
+  id                String   @id @default(cuid())
+  name              String
+  description       String
+  pointsCost        Int      // Custo em pontos de fidelidade
+  type              RewardType
+  value             Float    // Valor da recompensa (depende do tipo)
+  icon              String?  // URL para o ícone da recompensa
+  isActive          Boolean  @default(true)
+  minimumLevel      Int      @default(1)   // Nível mínimo para resgatar
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relacionamento com usuários que resgataram
+  redeemedBy        User[]
+}
+
+// Modelo para registrar histórico de resgates de recompensas
+model RewardRedemption {
+  id        String   @id @default(cuid())
+  userId    String
+  rewardId  String
+  points    Int      // Pontos gastos
+  createdAt DateTime @default(now())
+}
+
 enum Role {
   USER
   ADMIN
@@ -115,4 +167,11 @@ enum RoundStatus {
   BETTING
   RUNNING
   FINISHED
+}
+
+enum RewardType {
+  FREE_BET          // Aposta gratuita
+  MULTIPLIER_BOOST  // Aumento temporário de multiplicador
+  CASH_BONUS        // Bônus em dinheiro
+  DAILY_LIMIT_BOOST // Aumento temporário do limite diário
 }

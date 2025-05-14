@@ -2,12 +2,14 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '../auth/[...nextauth]';
+import { addBetRewards, getUserBonusMultiplier } from '@/lib/levelSystem';
 
 // Constantes de segurança
 const BETTING_PHASE_DURATION = 10000; // 10 segundos para apostas
 const MIN_BET_AMOUNT = 5;             // Aposta mínima: R$ 5,00
 const MAX_BET_AMOUNT = 1000;          // Aposta máxima: R$ 1000,00
 const DEFAULT_DAILY_BET_LIMIT = 5000; // Limite diário padrão: R$ 5000,00
+const WIN_MULTIPLIER = 1.8;           // Multiplicador padrão para vitórias
 
 export default async function handler(
   req: NextApiRequest,
@@ -223,28 +225,83 @@ export default async function handler(
               }
             },
             select: {
+              id: true,
               balance: true,
-              totalBets: true
+              totalBets: true,
+              level: true,
+              xp: true,
+              loyaltyPoints: true
             }
           });
 
           console.log('Aposta realizada com sucesso:', bet.id);
           console.log('Total de apostas atualizado:', updatedUser.totalBets);
           
-          // Incluir informações adicionais na resposta
-          return res.status(201).json({
-            id: bet.id,
-            amount: bet.amount,
-            type: bet.type,
-            createdAt: bet.createdAt,
-            newBalance: updatedUser.balance,
-            totalBets: updatedUser.totalBets,
-            limits: {
-              min: MIN_BET_AMOUNT,
-              max: MAX_BET_AMOUNT,
-              daily: userDailyLimit
+          // 5. NOVO: Adicionar XP e pontos de fidelidade
+          try {
+            // Inicialmente, a aposta ainda não tem resultado, então não sabemos se o usuário ganhou
+            // O resultado será processado quando a rodada terminar
+            const betRewards = await addBetRewards(user.id, bet, false);
+            
+            console.log('Recompensas de aposta adicionadas:', {
+              xp: betRewards.addedXP,
+              points: betRewards.addedPoints,
+              levelUp: betRewards.levelUp ? 
+                `Subiu de nível! ${betRewards.oldLevel} → ${betRewards.newLevel}` : 
+                'Sem subida de nível'
+            });
+            
+            // 6. Obter o multiplicador de bônus do usuário (para informação)
+            let userBonusMultiplier = 0;
+            try {
+              userBonusMultiplier = await getUserBonusMultiplier(user.id);
+            } catch (bonusError) {
+              console.error('Erro ao obter multiplicador de bônus:', bonusError);
             }
-          });
+            
+            // Incluir informações adicionais na resposta
+            return res.status(201).json({
+              id: bet.id,
+              amount: bet.amount,
+              type: bet.type,
+              createdAt: bet.createdAt,
+              newBalance: updatedUser.balance,
+              totalBets: updatedUser.totalBets,
+              rewards: {
+                addedXP: betRewards.addedXP,
+                addedPoints: betRewards.addedPoints,
+                levelUp: betRewards.levelUp,
+                oldLevel: betRewards.oldLevel,
+                newLevel: betRewards.newLevel,
+                currentXP: updatedUser.xp,
+                currentPoints: updatedUser.loyaltyPoints,
+                bonusMultiplier: userBonusMultiplier
+              },
+              limits: {
+                min: MIN_BET_AMOUNT,
+                max: MAX_BET_AMOUNT,
+                daily: userDailyLimit
+              }
+            });
+          } catch (rewardsError) {
+            console.error('Erro ao adicionar recompensas de aposta:', rewardsError);
+            
+            // Mesmo se falhar a adição de recompensas, a aposta foi realizada
+            return res.status(201).json({
+              id: bet.id,
+              amount: bet.amount,
+              type: bet.type,
+              createdAt: bet.createdAt,
+              newBalance: updatedUser.balance,
+              totalBets: updatedUser.totalBets,
+              warning: "A aposta foi registrada, mas ocorreu um erro ao calcular recompensas.",
+              limits: {
+                min: MIN_BET_AMOUNT,
+                max: MAX_BET_AMOUNT,
+                daily: userDailyLimit
+              }
+            });
+          }
         } catch (updateError) {
           // Se houve erro ao atualizar totalBets, podemos tentar uma abordagem alternativa
           console.error('Erro ao atualizar totalBets:', updateError);
