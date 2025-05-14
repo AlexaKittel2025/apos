@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/router';
+// Não importamos o router diretamente aqui
 
 interface BalanceContextType {
   userBalance: number;
@@ -18,13 +18,23 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [userBalance, setUserBalance] = useState(0);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const router = useRouter();
-  const [isClient, setIsClient] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Verificar se estamos no cliente antes de usar funcionalidades que dependem do navegador
   useEffect(() => {
-    setIsClient(true);
+    setMounted(true);
   }, []);
+
+  const redirectToLogin = () => {
+    // Usar window.location apenas depois que o componente estiver montado no cliente
+    if (mounted && typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      // Não redirecionar se já estiver na página de login ou registro
+      if (!currentPath.startsWith('/auth/')) {
+        window.location.href = '/auth/login';
+      }
+    }
+  };
 
   const fetchBalance = async () => {
     // Não fazer a chamada se o usuário não estiver autenticado
@@ -64,9 +74,9 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         console.error('Erro ao buscar saldo:', response.status, errorText);
         
         // Se receber 401 ou 403, pode ser problema de autenticação
-        if (response.status === 401 || response.status === 403 && isClient) {
+        if ((response.status === 401 || response.status === 403) && mounted) {
           console.log("Problema de autenticação detectado, redirecionando para login");
-          router.push('/auth/login');
+          redirectToLogin();
           return userBalance;
         }
         
@@ -103,7 +113,7 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Atualizar saldo quando a sessão mudar
   useEffect(() => {
-    if (!isClient) return; // Não executa no servidor
+    if (!mounted) return; // Não executa no servidor ou antes da montagem
     
     const handleSessionChange = async () => {
       // Verificar se a sessão está completa e pronta
@@ -112,14 +122,12 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
         await fetchBalance();
       } else if (status === 'unauthenticated') {
         console.log('Usuário não autenticado');
-        if (router.isReady && !router.pathname.startsWith('/auth/')) {
-          router.push('/auth/login');
-        }
+        redirectToLogin();
       }
     };
 
     handleSessionChange();
-  }, [session, status, isClient, router.isReady]);
+  }, [session, status, mounted]);
 
   // Função para atualizar o saldo manualmente
   const refreshBalance = async () => {
