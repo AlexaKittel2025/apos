@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/router';
 
 interface BalanceContextType {
   userBalance: number;
@@ -13,16 +14,33 @@ interface BalanceContextType {
 const BalanceContext = createContext<BalanceContextType | undefined>(undefined);
 
 export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [userBalance, setUserBalance] = useState(0);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const router = useRouter();
 
   const fetchBalance = async () => {
-    if (!session?.user?.id) return userBalance;
+    // Não fazer a chamada se o usuário não estiver autenticado
+    if (!session?.user?.id) {
+      console.log("Sem sessão de usuário válida para buscar saldo");
+      return userBalance;
+    }
+
+    // Não iniciar nova requisição se já estiver carregando
+    if (isLoadingBalance) {
+      console.log("Já está carregando saldo, ignorando chamada duplicada");
+      return userBalance;
+    }
 
     setIsLoadingBalance(true);
+    setLastError(null);
+    
     try {
-      const response = await fetch(`/api/user/balance?_=${new Date().getTime()}`, {
+      const timestamp = new Date().getTime();
+      console.log(`Buscando saldo para usuário ${session.user.id} em ${timestamp}`);
+      
+      const response = await fetch(`/api/user/balance?_=${timestamp}`, {
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
@@ -31,14 +49,24 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
       
       if (response.ok) {
         const data = await response.json();
+        console.log(`Saldo obtido: ${data.balance}`);
         setUserBalance(data.balance);
         return data.balance;
       } else {
-        console.error('Erro ao buscar saldo: Resposta não-OK', await response.text());
+        const errorText = await response.text();
+        setLastError(`Resposta não-OK: ${response.status}`);
+        console.error('Erro ao buscar saldo:', response.status, errorText);
+        
+        // Se receber 401 ou 403, pode ser problema de autenticação
+        if (response.status === 401 || response.status === 403) {
+          console.log("Problema de autenticação detectado, redirecionando para login");
+          router.push('/auth/login');
+          return userBalance;
+        }
         
         try {
           console.log('Tentando buscar saldo novamente...');
-          const retryResponse = await fetch(`/api/user/balance?retry=1&_=${new Date().getTime()}`, {
+          const retryResponse = await fetch(`/api/user/balance?retry=1&_=${timestamp + 1}`, {
             headers: {
               'Cache-Control': 'no-cache',
               'Pragma': 'no-cache'
@@ -47,15 +75,20 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
           
           if (retryResponse.ok) {
             const retryData = await retryResponse.json();
+            console.log(`Saldo obtido na segunda tentativa: ${retryData.balance}`);
             setUserBalance(retryData.balance);
             return retryData.balance;
+          } else {
+            setLastError(`Falha na segunda tentativa: ${retryResponse.status}`);
           }
         } catch (retryError) {
           console.error('Erro na segunda tentativa de buscar saldo:', retryError);
+          setLastError(`Erro de rede na segunda tentativa`);
         }
       }
     } catch (error) {
       console.error('Erro ao buscar saldo:', error);
+      setLastError('Erro de rede ao buscar saldo');
     } finally {
       setIsLoadingBalance(false);
     }
@@ -64,10 +97,21 @@ export const BalanceProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Atualizar saldo quando a sessão mudar
   useEffect(() => {
-    if (session?.user?.id) {
-      fetchBalance();
-    }
-  }, [session]);
+    const handleSessionChange = async () => {
+      // Verificar se a sessão está completa e pronta
+      if (status === 'authenticated' && session?.user?.id) {
+        console.log('Sessão autenticada, buscando saldo inicial');
+        await fetchBalance();
+      } else if (status === 'unauthenticated') {
+        console.log('Usuário não autenticado');
+        if (!router.pathname.startsWith('/auth/')) {
+          router.push('/auth/login');
+        }
+      }
+    };
+
+    handleSessionChange();
+  }, [session, status, router]);
 
   // Função para atualizar o saldo manualmente
   const refreshBalance = async () => {
