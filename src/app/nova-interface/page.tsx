@@ -92,6 +92,25 @@ export default function NovaInterface() {
   const [editQuickBets, setEditQuickBets] = useState<string[]>([]);
   // Estado para mensagem de erro das apostas rápidas
   const [quickBetsError, setQuickBetsError] = useState<string | null>(null);
+  // Estado para armazenar o histórico de valores da linha
+  const [lineHistory, setLineHistory] = useState<number[]>([50, 50, 50, 50, 50, 50, 50, 50, 50, 50]);
+  // Estado para controlar a posição horizontal do gráfico baseado no tempo
+  const [timeProgress, setTimeProgress] = useState(0);
+  // Estado para armazenar a trajetória da bolinha
+  const [bolinhaTrail, setBolinhaTrail] = useState<{x: number, y: number}[]>([]);
+  // Flag para controlar se o bolinhaTrail já foi inicializado pelo menos uma vez
+  const [trailInitialized, setTrailInitialized] = useState(false);
+  // Estado para detectar quando precisamos reiniciar o componente de gráfico
+  const [graphKey, setGraphKey] = useState(0);
+  // Estado para detectar erros de renderização
+  const [hasRenderError, setHasRenderError] = useState(false);
+
+  // Adicionar um efeito para monitorar o bolinhaTrail
+  useEffect(() => {
+    if (bolinhaTrail.length > 0) {
+      console.log('Trajetória da bolinha atualizada:', bolinhaTrail.length, 'pontos');
+    }
+  }, [bolinhaTrail]);
 
   // Redirecionar se não estiver autenticado
   useEffect(() => {
@@ -253,10 +272,50 @@ export default function NovaInterface() {
 
     socketClient.on('lineUpdate', (newLine: number) => {
       setCurrentLine(newLine);
+      // Adicionar novo valor ao histórico e manter apenas os últimos 30 valores
+      setLineHistory(prev => [...prev.slice(-29), newLine]);
+      
+      // Atualizar a trajetória da bolinha com a nova posição
+      if (roundStatus === 'running' && timeProgress > 0) {
+        setBolinhaTrail(prev => {
+          // Garantir que haja pelo menos dois pontos para desenhar a linha
+          const initializedTrail = ensureMinimumTrailPoints(prev, timeProgress, newLine);
+          
+          // Manter só os últimos 100 pontos para não sobrecarregar
+          const trail = initializedTrail.length > 100 ? initializedTrail.slice(-100) : initializedTrail;
+          const newPoint = { x: timeProgress, y: limitValue(newLine, 15, 85) };
+          setTrailInitialized(true);
+          return [...trail, newPoint];
+        });
+      }
     });
 
     socketClient.on('timeUpdate', (timeLeft: number) => {
       setTimeLeft(Math.ceil(timeLeft / 1000)); // Converter de milissegundos para segundos
+      
+      // Atualizar o progresso de tempo apenas durante a fase de execução
+      if (roundStatus === 'running') {
+        // Calcular o progresso de 0 a 100 com base no tempo restante
+        // RUNNING_DURATION é 20 segundos
+        const elapsedSeconds = RUNNING_DURATION - Math.ceil(timeLeft / 1000);
+        const progress = (elapsedSeconds / RUNNING_DURATION) * 100;
+        const newProgress = Math.min(100, Math.max(0, progress));
+        setTimeProgress(newProgress);
+        
+        // Registrar posição para a trajetória
+        if (newProgress > 0) {
+          setBolinhaTrail(prev => {
+            // Garantir que haja pelo menos dois pontos para desenhar a linha
+            const initializedTrail = ensureMinimumTrailPoints(prev, newProgress, currentLine);
+            
+            // Manter só os últimos 100 pontos para não sobrecarregar
+            const trail = initializedTrail.length > 100 ? initializedTrail.slice(-100) : initializedTrail;
+            const newPoint = { x: newProgress, y: limitValue(currentLine, 15, 85) };
+            setTrailInitialized(true);
+            return [...trail, newPoint];
+          });
+        }
+      }
     });
 
     socketClient.on('gameState', (state: any) => {
@@ -841,6 +900,81 @@ export default function NovaInterface() {
     setEditQuickBets(newValues);
   };
 
+  // Função para limitar um valor entre min e max
+  const limitValue = (value: number, min: number, max: number) => {
+    return Math.min(Math.max(value, min), max);
+  };
+
+  // Função para garantir que a trajetória tenha pelo menos dois pontos
+  const ensureMinimumTrailPoints = (currentTrail: {x: number, y: number}[], currentProgress: number, currentPosition: number) => {
+    if (currentTrail.length === 0) {
+      // Se não houver pontos, criar pelo menos dois para iniciar a trajetória
+      return [
+        { x: 0, y: limitValue(currentPosition, 15, 85) },
+        { x: currentProgress, y: limitValue(currentPosition, 15, 85) }
+      ];
+    } else if (currentTrail.length === 1) {
+      // Se houver apenas um ponto, adicionar o ponto atual
+      return [
+        ...currentTrail,
+        { x: currentProgress, y: limitValue(currentPosition, 15, 85) }
+      ];
+    }
+    
+    // Retornar o trail existente se já tiver pelo menos dois pontos
+    return currentTrail;
+  };
+
+  // Função para criar um caminho SVG suavizado para o gráfico
+  const getLinePathD = (points: number[]) => {
+    if (points.length < 2) return '';
+    
+    // Começar o caminho
+    let path = `M0,${points[0]}`;
+    
+    // Adicionar pontos com curvas suaves
+    for (let i = 1; i < points.length; i++) {
+      const x1 = ((i - 1) / (points.length - 1)) * 100;
+      const x2 = (i / (points.length - 1)) * 100;
+      const xc = (x1 + x2) / 2;
+      path += ` S${xc},${points[i]} ${x2},${points[i]}`;
+    }
+    
+    return path;
+  };
+
+  // Função para gerar o caminho SVG com base no progresso do tempo
+  const generatePathFromHistory = (history: number[], progress: number, limitYValues = false) => {
+    if (history.length < 2 || progress <= 0) return '';
+    
+    // Calcular quantos pontos mostrar baseado no progresso
+    const totalPoints = history.length;
+    const pointsToShow = Math.max(1, Math.floor((totalPoints * progress) / 100));
+    
+    let path = '';
+    
+    // Gerar os pontos do caminho até o progresso atual
+    for (let i = 1; i <= pointsToShow && i < totalPoints; i++) {
+      const x = (i / totalPoints) * 100;
+      let y = history[i];
+      
+      // Limitar os valores Y entre 15% e 85% para evitar que o tooltip seja cortado
+      if (limitYValues) {
+        y = limitValue(y, 15, 85);
+      }
+      
+      // Se for o último ponto visível, ajustar para o progresso exato
+      if (i === pointsToShow && progress < 100) {
+        const partialX = (progress / 100) * 100; // Posição exata
+        path += ` L${partialX},${y}%`;
+      } else {
+        path += ` L${x}%,${y}%`;
+      }
+    }
+    
+    return path;
+  };
+
   if (status === 'loading') {
     return (
       <div className="container mx-auto px-4 py-12 flex justify-center">
@@ -891,50 +1025,21 @@ export default function NovaInterface() {
                 </p>
               </div>
               
-              <div className="relative h-64 bg-[#121212] rounded-lg mb-4 overflow-hidden border border-gray-800">
-                <div
-                  className="absolute w-full h-1 bg-[#3bc37a] transition-all duration-300"
-                  style={{ top: `${currentLine}%` }}
-                />
-                <div className="absolute left-0 top-1/2 w-full h-1 bg-gray-600 opacity-50" />
-                
-                {result !== null && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-                    <div className="text-center">
-                      <p className="text-lg">Resultado</p>
-                      <p className={`text-2xl font-bold ${currentLine < 50 ? "text-[#3bc37a]" : "text-[#1a86c7]"}`}>
-                        {currentLine < 50 ? "ACIMA" : "ABAIXO"} ({displayResult !== null ? displayResult.toFixed(1) : (100 - (result || 0)).toFixed(1)})
-                      </p>
-                      
-                      {myBet && (
-                        <p className="mt-2">
-                          {(myBet.type === 'ABOVE' && currentLine < 50) || (myBet.type === 'BELOW' && currentLine >= 50) ? (
-                            <span className="text-[#3bc37a]">Você ganhou R$ {(myBet.amount * WIN_MULTIPLIER).toFixed(2)}</span>
-                          ) : (
-                            <span className="text-red-500">Você perdeu R$ {myBet.amount.toFixed(2)}</span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              
               <div className="text-center mb-4">
-                <div className="inline-block px-4 py-2 rounded-full bg-gradient-to-r from-[#1a86c7] to-[#3bc37a] text-white text-lg font-medium">
+                <div className="inline-block px-4 py-2 rounded-full bg-gradient-to-r from-[#f97316] to-[#f59e0b] text-white text-lg font-medium">
                   {roundStatus === 'betting' && `Apostas: ${timeLeft}s`}
                   {roundStatus === 'running' && `Rodada em andamento: ${timeLeft}s`}
                   {roundStatus === 'finished' && 'Rodada finalizada'}
                 </div>
               </div>
-              
+
               {/* Mensagem de erro, se houver */}
               {errorMessage && (
                 <div className="mb-4 p-3 bg-red-500 bg-opacity-20 border border-red-500 rounded-md text-red-400 text-sm">
                   {errorMessage}
                 </div>
               )}
-              
+
               <div className="flex justify-center gap-4 mb-6">
                 <Button
                   variant={betType === 'ABOVE' ? 'primary' : 'secondary'}
@@ -949,7 +1054,7 @@ export default function NovaInterface() {
                   Abaixo
                 </Button>
               </div>
-              
+
               <div className="flex justify-center flex-wrap gap-2 mb-6">
                 {customQuickBets.map((bet) => (
                   <button
@@ -980,7 +1085,7 @@ export default function NovaInterface() {
                   </svg>
                 </button>
               </div>
-              
+
               <div className="text-center text-xs text-gray-400 mb-2">
                 <p>
                   Limites: Min R$ {MIN_BET_AMOUNT} • Max R$ {MAX_BET_AMOUNT} • 
