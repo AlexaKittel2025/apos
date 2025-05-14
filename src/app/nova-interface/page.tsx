@@ -459,7 +459,19 @@ export default function NovaInterface() {
   
   // Função para fazer apostas
   const placeBet = async () => {
-    if (!selectedBet || !betType || roundStatus !== 'betting' || !roundId) return;
+    if (!selectedBet || !betType || !roundId) return;
+    
+    // Verificar se está na fase de apostas
+    if (roundStatus !== 'betting') {
+      setErrorMessage('Apostas só podem ser feitas durante a fase de apostas');
+      return;
+    }
+    
+    // Verificar se já apostou nesta rodada
+    if (myBet !== null) {
+      setErrorMessage('Você já fez uma aposta nesta rodada');
+      return;
+    }
     
     // Validar a aposta antes de processá-la
     if (!validateBet(selectedBet, betType)) {
@@ -861,6 +873,14 @@ export default function NovaInterface() {
                 </div>
               )}
               
+              {/* Dica sobre seleção de valores a qualquer momento */}
+              <div className="mb-4 p-2 rounded-md bg-blue-600 bg-opacity-20 border border-blue-600 text-center">
+                <p className="text-blue-400 text-sm">
+                  Você pode selecionar valores e direção a qualquer momento para preparar sua aposta.
+                  {roundStatus !== 'betting' && ' Aguarde a fase de apostas para confirmar.'}
+                </p>
+              </div>
+              
               <div className="relative h-64 bg-[#121212] rounded-lg mb-4 overflow-hidden border border-gray-800">
                 <div
                   className="absolute w-full h-1 bg-[#3bc37a] transition-all duration-300"
@@ -908,14 +928,12 @@ export default function NovaInterface() {
               <div className="flex justify-center gap-4 mb-6">
                 <Button
                   variant={betType === 'ABOVE' ? 'primary' : 'secondary'}
-                  disabled={roundStatus !== 'betting' || myBet !== null}
                   onClick={() => setBetType('ABOVE')}
                 >
                   Acima
                 </Button>
                 <Button
                   variant={betType === 'BELOW' ? 'primary' : 'secondary'}
-                  disabled={roundStatus !== 'betting' || myBet !== null}
                   onClick={() => setBetType('BELOW')}
                 >
                   Abaixo
@@ -927,7 +945,7 @@ export default function NovaInterface() {
                   <button
                     key={bet}
                     onClick={() => setSelectedBet(bet)}
-                    disabled={roundStatus !== 'betting' || bet > userBalance || myBet !== null}
+                    disabled={bet > userBalance}
                     className={`px-4 py-2 rounded-md ${
                       selectedBet === bet 
                         ? 'bg-[#3bc37a] text-white' 
@@ -943,7 +961,6 @@ export default function NovaInterface() {
                 {/* Botão para configurar apostas rápidas */}
                 <button
                   onClick={initEditQuickBets}
-                  disabled={roundStatus !== 'betting' || myBet !== null}
                   className="px-4 py-2 rounded-md bg-[#1e1e1e] text-white hover:bg-[#1a86c7] hover:bg-opacity-30"
                   title="Configurar valores de apostas rápidas"
                 >
@@ -981,7 +998,10 @@ export default function NovaInterface() {
               disabled={!selectedBet || !betType || isBetting || roundStatus !== 'betting' || (selectedBet || 0) > userBalance || myBet !== null}
               onClick={placeBet}
             >
-              {isBetting ? 'Processando...' : myBet ? 'Aposta Realizada' : 'Fazer Aposta'}
+              {isBetting ? 'Processando...' : 
+               myBet ? 'Aposta Realizada' : 
+               roundStatus !== 'betting' ? 'Aguardando fase de apostas...' : 
+               'Fazer Aposta'}
             </Button>
           </CardFooter>
           
