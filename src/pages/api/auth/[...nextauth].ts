@@ -1,8 +1,10 @@
+import { NextApiRequest, NextApiResponse } from 'next';
 import NextAuth, { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { User } from 'next-auth';
 import { prisma } from '@/lib/prisma';
+import { rateLimitMiddleware } from '@/lib/rateLimit';
 
 interface ExtendedUser extends User {
   id: string;
@@ -26,7 +28,7 @@ declare module "next-auth" {
   }
 }
 
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
@@ -34,10 +36,27 @@ export const authOptions: NextAuthOptions = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Senha', type: 'password' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         try {
-          console.log('========== TENTATIVA DE LOGIN ==========');
-          console.log('Credenciais recebidas:', credentials?.email);
+          // Obter o IP real do cliente considerando proxy
+          const clientIp = 
+            req?.headers?.['x-real-ip'] as string || 
+            req?.headers?.['x-forwarded-for'] as string || 
+            '127.0.0.1';
+          
+          // Aplicar rate limiting para tentativas de login
+          const rateLimit = rateLimitMiddleware(clientIp, {
+            windowMs: 60 * 1000, // 1 minuto
+            maxRequests: 5, // 5 tentativas por minuto
+            blockDurationMs: 15 * 60 * 1000, // 15 minutos de bloqueio
+            skipSuccessfulRequests: true
+          });
+          
+          // Se estiver limitado, rejeitar a tentativa
+          if (!rateLimit.success) {
+            console.error(`Rate limit excedido para IP ${clientIp}: ${rateLimit.message}`);
+            throw new Error('Muitas tentativas de login. Tente novamente mais tarde.');
+          }
           
           if (!credentials?.email || !credentials?.password) {
             console.error('Email ou senha não fornecidos');
@@ -74,6 +93,9 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
+          // Registrar tentativa bem-sucedida para limpar o rate limit
+          registerSuccessfulAttempt(clientIp);
+          
           console.log('Login bem-sucedido:', user.id);
           console.log('Retornando usuário para o NextAuth:', { 
             id: user.id, 
@@ -131,7 +153,46 @@ export const authOptions: NextAuthOptions = {
     signIn: '/auth/login',
     error: '/auth/login',
   },
-  debug: true,
+  debug: process.env.NODE_ENV === 'development',
 };
 
-export default NextAuth(authOptions); 
+// Exportar função para importação em outros arquivos
+export { authOptions };
+
+// Função que importa o sistema de rate limiting apenas quando necessário
+const { registerSuccessfulAttempt } = require('@/lib/rateLimit');
+
+// NextAuth handler com rate limiting adicional
+export default async function auth(req: NextApiRequest, res: NextApiResponse) {
+  // Verificar se é uma requisição de login
+  if (req.method === 'POST' && req.url?.includes('/api/auth/callback/credentials')) {
+    // Obter o IP real do cliente considerando proxy
+    const clientIp = 
+      req.headers['x-real-ip'] as string || 
+      req.headers['x-forwarded-for'] as string || 
+      '127.0.0.1';
+    
+    // Aplicar rate limiting para tentativas de login
+    const rateLimit = rateLimitMiddleware(clientIp, {
+      windowMs: 60 * 1000, // 1 minuto
+      maxRequests: 5, // 5 tentativas por minuto
+      blockDurationMs: 15 * 60 * 1000, // 15 minutos de bloqueio
+    });
+    
+    // Adicionar headers de rate limiting
+    Object.entries(rateLimit.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    
+    // Se estiver limitado, rejeitar a tentativa
+    if (!rateLimit.success) {
+      return res.status(429).json({ 
+        error: 'TooManyRequests',
+        message: rateLimit.message 
+      });
+    }
+  }
+  
+  // Continuar com o fluxo normal do NextAuth
+  return await NextAuth(req, res, authOptions);
+} 
