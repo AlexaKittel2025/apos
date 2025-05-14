@@ -60,8 +60,8 @@ export default function Register() {
             <Image
               src="/imagens/logo.png"
               alt="Logo Din-Din"
-              width={120}
-              height={120}
+              width={180}
+              height={180}
               className="h-auto"
               priority
             />

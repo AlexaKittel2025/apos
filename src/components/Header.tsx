@@ -23,15 +23,15 @@ export default function Header() {
   
   return (
     <header className="text-white border-b border-gray-800" style={{ backgroundColor: '#080808' }}>
-      <div className="container mx-auto px-4 py-3">
+      <div className="container mx-auto px-4 py-5">
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-6">
             <Link href="/" className="flex items-center">
               <Image
                 src="/imagens/logo.png"
                 alt="Logo"
-                width={120}
-                height={40}
+                width={180}
+                height={60}
                 style={{ height: 'auto' }}
                 priority
               />

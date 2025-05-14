@@ -44,12 +44,12 @@ export default function Maintenance({ plannedEndTime, title, message, showButton
       <div className="w-full max-w-md bg-gray-800 rounded-xl overflow-hidden shadow-xl border border-gray-700">
         <div className="px-6 py-8">
           <div className="flex justify-center mb-6">
-            <div className="relative w-24 h-24">
+            <div className="relative w-36 h-36">
               <Image 
                 src="/imagens/logo.png" 
                 alt="Logo Din-Din"
                 fill
-                sizes="96px"
+                sizes="144px"
                 style={{ objectFit: 'contain' }}
                 priority
               />
