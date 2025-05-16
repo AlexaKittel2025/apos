@@ -57,10 +57,39 @@ npx prisma migrate dev
 ```
 
 5. Inicie o servidor de desenvolvimento:
+
+**Para ambiente normal:**
 ```bash
 npm run dev
 # ou
 yarn dev
+```
+
+**Para Windows (opção mais confiável):**
+```bash
+npm run dev:windows
+# ou
+yarn dev:windows
+```
+
+**Para qualquer sistema (recomendado):**
+```bash
+npm run dev:run
+# ou
+yarn dev:run
+```
+
+**Para limpar o cache e iniciar:**
+```bash
+npm run dev:clean
+# ou
+yarn dev:clean
+```
+
+**Caso nenhuma das opções funcione:**
+```bash
+npm run clean
+npm run dev
 ```
 
 O aplicativo estará disponível em `http://localhost:3000`.
@@ -89,6 +118,28 @@ src/
 2. Faça login com uma conta de administrador
 3. Visualize estatísticas do jogo
 4. Ajuste o lucro da casa
+
+## Solucionando Problemas de Cache no Windows/WSL
+
+Se você estiver enfrentando problemas com o cache do webpack no Windows ou WSL, tais como erros `ENOENT` ou problemas de renomeação de arquivos, foram implementadas várias soluções:
+
+1. **Scripts Otimizados para Windows**
+   - **`npm run dev:windows`** - Executa um arquivo batch especializado (mais confiável)
+   - **`npm run dev:run`** - Script universal compatível com todos os sistemas
+   - Limpa automaticamente o cache antes de iniciar
+   - Configura variáveis de ambiente otimizadas
+   - Usa polling para melhor detecção de alterações em arquivos
+
+2. **Comando de Limpeza** (`npm run clean`)
+   - Remove completamente o diretório `.next`
+   - Resolve problemas persistentes de cache
+
+3. **Configurações Especiais**
+   - Arquivo `.env.development` com configurações específicas para desenvolvimento
+   - Ajustes no webpack para evitar problemas de compressão
+   - Uso de caminhos absolutos para o diretório de cache
+
+Estas melhorias garantem uma experiência de desenvolvimento mais estável em ambientes Windows/WSL.
 
 ## Melhorias no Sistema de Chat
 

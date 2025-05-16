@@ -96,10 +96,12 @@ loadMessages();
 // Limpar mensagens antigas a cada hora
 setInterval(cleanOldMessages, 60 * 60 * 1000);
 
-export default {
+const messagesStore = {
   chatMessages,
   addMessage,
   updateMessage,
   cleanOldMessages,
   saveMessages
-}; 
+};
+
+export default messagesStore; 

@@ -14,6 +14,20 @@ interface GameStats {
     endTime: string;
     houseProfit: number;
   };
+  // Propriedades para o jogo Multiplicador
+  houseBalance?: number;
+  totalMultiplierBets?: number;
+  totalMultiplierAmount?: number;
+  totalMultiplierPayout?: number;
+  recentRounds?: Array<{
+    id: string;
+    startTime: string;
+    endTime?: string;
+    result?: number;
+    status: string;
+    totalBets?: number;
+    totalAmount?: number;
+  }>;
 }
 
 interface User {
@@ -223,6 +237,31 @@ export default function AdminPanel() {
     }
   };
 
+  // Função para atualizar as estatísticas, incluindo dados do Multiplicador
+  const refreshStats = async () => {
+    try {
+      setLoading(true);
+      setSuccessMessage('');
+      setErrorMessage('');
+      
+      const response = await fetch('/api/admin/stats?game=multiplicador');
+      
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+        setSuccessMessage('Estatísticas atualizadas com sucesso!');
+      } else {
+        const error = await response.json();
+        setErrorMessage(error.message || 'Erro ao atualizar estatísticas');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar estatísticas:', error);
+      setErrorMessage('Erro ao atualizar estatísticas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchWithdrawals = async () => {
     try {
       setLoadingTransactions(true);
@@ -290,17 +329,31 @@ export default function AdminPanel() {
       setSuccessMessage('');
       setErrorMessage('');
       
-      const response = await fetch('/api/rounds', {
+      // URL do endpoint depende da aba ativa
+      const endpoint = activeTab === 'multiplicador' 
+        ? '/api/admin/multiplier-config'
+        : '/api/rounds';
+      
+      // Dados para enviar dependem da aba ativa
+      const requestData = activeTab === 'multiplicador'
+        ? { profitMargin: houseProfit }
+        : { houseProfit };
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ houseProfit }),
+        body: JSON.stringify(requestData),
       });
 
       if (response.ok) {
         setSuccessMessage('Lucro da casa atualizado com sucesso!');
-        fetchStats();
+        if (activeTab === 'multiplicador') {
+          refreshStats();
+        } else {
+          fetchStats();
+        }
       } else {
         const error = await response.json();
         setErrorMessage(error.message || 'Erro ao atualizar lucro da casa');
@@ -386,6 +439,13 @@ export default function AdminPanel() {
     }
   }, [activeTab]);
 
+  // Adicionar efeito para carregar estatísticas do Multiplicador quando a aba for selecionada
+  useEffect(() => {
+    if (activeTab === 'multiplicador') {
+      refreshStats();
+    }
+  }, [activeTab]);
+
   if (status === 'loading' || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
@@ -447,6 +507,12 @@ export default function AdminPanel() {
             onClick={() => setActiveTab('maintenance')}
           >
             Manutenção
+          </button>
+          <button
+            className={`px-4 py-2 ${activeTab === 'multiplicador' ? 'text-[#3bc37a] border-b-2 border-[#3bc37a]' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => setActiveTab('multiplicador')}
+          >
+            Multiplicador
           </button>
         </div>
 
@@ -1053,6 +1119,202 @@ export default function AdminPanel() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Conteúdo da aba Multiplicador */}
+        {activeTab === 'multiplicador' && (
+          <div className="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 className="text-xl font-semibold mb-4">Administração do Jogo Multiplicador</h2>
+            
+            <div className="grid grid-cols-1 gap-6 mb-8">
+              {/* Configurações do Jogo */}
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-green-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                  </svg>
+                  Configurações do Jogo
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {/* Configuração de Lucro da Casa */}
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Margem de Lucro da Casa</p>
+                    <div className="mb-3">
+                      <div className="flex justify-between mb-1">
+                        <label htmlFor="multiplierProfit" className="text-sm font-medium text-gray-400">
+                          Margem (%)
+                        </label>
+                        <span className="text-sm text-white">{houseProfit}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        id="multiplierProfit"
+                        value={houseProfit}
+                        onChange={(e) => setHouseProfit(Number(e.target.value))}
+                        min="0"
+                        max="15"
+                        step="0.5"
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                      />
+                      <div className="flex justify-between mt-1 text-xs text-gray-500">
+                        <span>0%</span>
+                        <span>Recomendado: 3-5%</span>
+                        <span>15%</span>
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={updateHouseProfit}
+                      disabled={loading}
+                      className="w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-md hover:opacity-90 disabled:opacity-50 transition-colors"
+                    >
+                      {loading ? 'Atualizando...' : 'Aplicar Margem de Lucro'}
+                    </button>
+                  </div>
+                  
+                  {/* Saldo da Casa */}
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm mb-2">Saldo da Casa</p>
+                    <p className="text-3xl font-bold text-green-400">R$ {stats?.houseBalance?.toFixed(2) || '100,000.00'}</p>
+                    <p className="text-xs text-gray-500 mt-1">Saldo disponível para pagamento de prêmios</p>
+                    
+                    <button
+                      onClick={refreshStats}
+                      disabled={loading}
+                      className="w-full mt-4 px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                    >
+                      Atualizar Estatísticas
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Estatísticas do Jogo */}
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-blue-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
+                    <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
+                  </svg>
+                  Estatísticas do Jogo Multiplicador
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Total de Apostas</p>
+                    <p className="text-2xl font-bold text-white">{stats?.totalMultiplierBets || 0}</p>
+                    <p className="text-xs text-gray-500 mt-1">Número total de apostas realizadas</p>
+                  </div>
+                  
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Valor Total Apostado</p>
+                    <p className="text-2xl font-bold text-white">R$ {stats?.totalMultiplierAmount?.toFixed(2) || '0.00'}</p>
+                    <p className="text-xs text-gray-500 mt-1">Soma de todas as apostas</p>
+                  </div>
+                  
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <p className="text-gray-400 text-sm">Total de Pagamentos</p>
+                    <p className="text-2xl font-bold text-white">R$ {stats?.totalMultiplierPayout?.toFixed(2) || '0.00'}</p>
+                    <p className="text-xs text-gray-500 mt-1">Soma de todos os prêmios pagos</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Últimas Rodadas */}
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-purple-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                  Últimas Rodadas
+                </h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-700">
+                        <th className="px-4 py-2 text-left text-sm text-gray-400">ID</th>
+                        <th className="px-4 py-2 text-left text-sm text-gray-400">Horário</th>
+                        <th className="px-4 py-2 text-center text-sm text-gray-400">Multiplicador</th>
+                        <th className="px-4 py-2 text-right text-sm text-gray-400">Apostas</th>
+                        <th className="px-4 py-2 text-right text-sm text-gray-400">Valor Total</th>
+                        <th className="px-4 py-2 text-center text-sm text-gray-400">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats?.recentRounds?.map((round, index) => (
+                        <tr key={round.id} className="border-b border-gray-700 hover:bg-gray-700">
+                          <td className="px-4 py-2 text-sm">{round.id.substring(0, 8)}...</td>
+                          <td className="px-4 py-2 text-sm">{new Date(round.endTime || round.startTime).toLocaleString()}</td>
+                          <td className="px-4 py-2 text-sm text-center">
+                            <span className={`font-medium ${
+                              round.result && round.result >= 1.5 ? 'text-green-500' :
+                              round.result && round.result >= 1.0 ? 'text-blue-400' :
+                              round.result && round.result > 0 ? 'text-red-500' : 'text-gray-400'
+                            }`}>
+                              {round.result ? round.result.toFixed(2) + 'x' : 'N/A'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-sm text-right">{round.totalBets || 0}</td>
+                          <td className="px-4 py-2 text-sm text-right">R$ {round.totalAmount?.toFixed(2) || '0.00'}</td>
+                          <td className="px-4 py-2 text-sm text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              round.status === 'FINISHED' 
+                                ? 'bg-green-100 text-green-800' 
+                                : round.status === 'RUNNING'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {round.status === 'FINISHED' 
+                                ? 'Finalizada' 
+                                : round.status === 'RUNNING'
+                                ? 'Em Andamento'
+                                : 'Apostas'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      
+                      {(!stats?.recentRounds || stats.recentRounds.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-4 text-center text-gray-500">
+                            Nenhuma rodada recente encontrada
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Guia de Gestão do Jogo */}
+              <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h3 className="flex items-center text-lg font-medium text-amber-400 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  Guia de Administração
+                </h3>
+                <div className="text-sm text-gray-300 space-y-3">
+                  <p>
+                    <strong>Jogo Multiplicador</strong> é baseado em um multiplicador que varia entre 0.0x e 2.0x, onde os jogadores apostam e podem fazer cash-out a qualquer momento para garantir seus ganhos.
+                  </p>
+                  <p>
+                    <strong>Margem de Lucro:</strong> Define a vantagem matemática da casa. Uma margem de 5% significa que, a longo prazo, a casa terá um lucro de 5% sobre o valor total apostado.
+                  </p>
+                  <p>
+                    <strong>Recomendações:</strong>
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Mantenha a margem entre 3% e 5% para um equilíbrio entre lucratividade e experiência do jogador.</li>
+                    <li>Monitore o saldo da casa para garantir que haja fundos suficientes para pagar prêmios.</li>
+                    <li>Acompanhe as estatísticas regularmente para identificar tendências e ajustar configurações se necessário.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

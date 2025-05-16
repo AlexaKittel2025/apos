@@ -48,8 +48,8 @@ class ModuleRegistry {
    */
   async initializeModule(moduleId: string): Promise<void> {
     // Verificar se o módulo existe
-    const module = this.modules.get(moduleId);
-    if (!module) {
+    const moduleInstance = this.modules.get(moduleId);
+    if (!moduleInstance) {
       throw new Error(`Módulo não encontrado: ${moduleId}`);
     }
     
@@ -59,19 +59,19 @@ class ModuleRegistry {
     }
     
     // Inicializar dependências primeiro
-    if (module.dependencies && module.dependencies.length > 0) {
-      for (const depId of module.dependencies) {
+    if (moduleInstance.dependencies && moduleInstance.dependencies.length > 0) {
+      for (const depId of moduleInstance.dependencies) {
         // Verificar dependência circular
         if (depId === moduleId) {
-          module.status = 'error';
-          module.errorMessage = 'Dependência circular detectada';
+          moduleInstance.status = 'error';
+          moduleInstance.errorMessage = 'Dependência circular detectada';
           throw new Error(`Dependência circular detectada no módulo ${moduleId}`);
         }
         
         // Verificar se a dependência existe
         if (!this.modules.has(depId)) {
-          module.status = 'error';
-          module.errorMessage = `Dependência não encontrada: ${depId}`;
+          moduleInstance.status = 'error';
+          moduleInstance.errorMessage = `Dependência não encontrada: ${depId}`;
           throw new Error(`Módulo ${moduleId} depende de ${depId}, mas este não está registrado`);
         }
         
@@ -82,15 +82,15 @@ class ModuleRegistry {
     
     // Inicializar o módulo
     try {
-      module.status = 'initializing';
-      await module.initialize();
-      module.status = 'active';
+      moduleInstance.status = 'initializing';
+      await moduleInstance.initialize();
+      moduleInstance.status = 'active';
       this.initializedModules.add(moduleId);
-      console.log(`Módulo inicializado: ${module.name} (${module.id})`);
+      console.log(`Módulo inicializado: ${moduleInstance.name} (${moduleInstance.id})`);
     } catch (error) {
-      module.status = 'error';
-      module.errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Erro ao inicializar módulo ${module.id}:`, error);
+      moduleInstance.status = 'error';
+      moduleInstance.errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Erro ao inicializar módulo ${moduleInstance.id}:`, error);
       throw error;
     }
   }
@@ -136,12 +136,12 @@ class ModuleRegistry {
       if (visited.has(moduleId)) return;
       visited.add(moduleId);
       
-      const module = this.modules.get(moduleId);
-      if (!module) return;
+      const moduleInstance = this.modules.get(moduleId);
+      if (!moduleInstance) return;
       
       // Visitar dependências primeiro
-      if (module.dependencies) {
-        for (const depId of module.dependencies) {
+      if (moduleInstance.dependencies) {
+        for (const depId of moduleInstance.dependencies) {
           if (this.modules.has(depId)) {
             visit(depId);
           }
@@ -164,14 +164,14 @@ class ModuleRegistry {
    * Desativa e finaliza um módulo específico
    */
   async shutdownModule(moduleId: string): Promise<void> {
-    const module = this.modules.get(moduleId);
-    if (!module) {
+    const moduleInstance = this.modules.get(moduleId);
+    if (!moduleInstance) {
       throw new Error(`Módulo não encontrado: ${moduleId}`);
     }
     
     // Verificar se o módulo está ativo
-    if (module.status !== 'active') {
-      console.warn(`Módulo ${moduleId} não está ativo (status: ${module.status})`);
+    if (moduleInstance.status !== 'active') {
+      console.warn(`Módulo ${moduleId} não está ativo (status: ${moduleInstance.status})`);
       return;
     }
     
@@ -190,18 +190,18 @@ class ModuleRegistry {
     }
     
     // Executar shutdown se disponível
-    if (module.shutdown) {
+    if (moduleInstance.shutdown) {
       try {
-        await module.shutdown();
+        await moduleInstance.shutdown();
       } catch (error) {
         console.error(`Erro ao finalizar módulo ${moduleId}:`, error);
       }
     }
     
     // Atualizar status
-    module.status = 'disabled';
+    moduleInstance.status = 'disabled';
     this.initializedModules.delete(moduleId);
-    console.log(`Módulo desativado: ${module.name} (${module.id})`);
+    console.log(`Módulo desativado: ${moduleInstance.name} (${moduleInstance.id})`);
   }
   
   /**
@@ -231,12 +231,12 @@ class ModuleRegistry {
    * Obtém um serviço exportado por um módulo
    */
   getService<T = any>(moduleId: string, serviceName: string): T | undefined {
-    const module = this.modules.get(moduleId);
-    if (!module || module.status !== 'active') {
+    const moduleInstance = this.modules.get(moduleId);
+    if (!moduleInstance || moduleInstance.status !== 'active') {
       return undefined;
     }
     
-    return module.exports?.[serviceName] as T;
+    return moduleInstance.exports?.[serviceName] as T;
   }
   
   /**

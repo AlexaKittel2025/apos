@@ -73,7 +73,7 @@ const nextConfig = {
   },
   
   // Configuração para evitar problemas com desenvolvimento
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     if (!isServer) {
       config.externals = [...(config.externals || []), 'bufferutil', 'utf-8-validate'];
     }
@@ -86,6 +86,25 @@ const nextConfig = {
       net: false,
       tls: false,
     };
+    
+    // Configuração de cache para desenvolvimento em WSL/Windows
+    if (dev) {
+      const path = require('path');
+      const cacheDir = path.resolve(process.cwd(), '.next/cache/webpack');
+      
+      // Simplificando a configuração de cache para evitar erros
+      config.cache = {
+        type: 'filesystem',
+        allowCollectingMemory: true,
+        buildDependencies: {
+          config: [__filename],
+        },
+        cacheDirectory: cacheDir,
+        name: isServer ? 'server' : 'client',
+        // Desativar compressão para minimizar erros de IO
+        compression: false
+      };
+    }
     
     return config;
   },

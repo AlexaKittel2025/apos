@@ -33,20 +33,40 @@ model User {
   transactions  Transaction[]
   messages      ChatMessage[]
   rewards       Reward[]      // Relação com as recompensas
+  cashOuts      CashOut[]     // Relação com cash-outs do jogo Multiplicador
+  settings      UserSettings? // Relação com configurações do usuário
+}
+
+// Configurações personalizadas do usuário
+model UserSettings {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  dailyBetLimit Float?   // Limite diário personalizado
+  theme         String?  // Tema da interface
+  notifications Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Bet {
-  id        String     @id @default(cuid())
-  userId    String
-  amount    Float
-  type      BetType
-  result    BetResult?
-  createdAt DateTime   @default(now())
-  roundId   String
-  round     Round      @relation(fields: [roundId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
+  id          String      @id @default(cuid())
+  userId      String
+  gameType    String      @default("crash") // Tipo de jogo: "crash", "multiplicador", etc.
+  amount      Float
+  type        BetType?    // Para jogos tipo crash
+  status      String      @default("PENDING") // "PENDING", "COMPLETED", "CANCELED"
+  result      Float?      // Resultado (multiplicador)
+  winAmount   Float?      // Valor ganho (se houver)
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?   // Quando a aposta foi finalizada
+  roundId     String
+  user        User        @relation(fields: [userId], references: [id])
+  cashOut     CashOut?    // Relação com cash-out (Multiplicador)
+  round       Round?      @relation(fields: [roundId], references: [id])
 }
 
+// Renomeando para Round para compatibilidade
 model Round {
   id          String      @id @default(cuid())
   result      Float
@@ -55,6 +75,22 @@ model Round {
   status      RoundStatus @default(BETTING)
   houseProfit Float       @default(0)
   bets        Bet[]
+}
+
+// Novo modelo para rodadas do jogo Multiplicador
+model GameRound {
+  id          String    @id @default(cuid())
+  gameType    String    // "multiplicador"
+  startTime   DateTime  @default(now())
+  endTime     DateTime?
+  status      String    @default("BETTING") // "BETTING", "RUNNING", "FINISHED"
+  result      Float?    // Multiplicador final da rodada
+  totalBets   Int       @default(0)
+  totalAmount Float     @default(0)
+  houseProfit Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cashOuts    CashOut[] // Relação com cash-outs desta rodada
 }
 
 model Transaction {
@@ -67,6 +103,33 @@ model Transaction {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
   user      User              @relation(fields: [userId], references: [id])
+}
+
+// Novo modelo para cash-out do jogo Multiplicador
+model CashOut {
+  id         String    @id @default(cuid())
+  userId     String
+  betId      String    @unique
+  roundId    String
+  multiplier Float     // Multiplicador no momento do cash-out
+  amount     Float     // Valor recebido
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id])
+  bet        Bet       @relation(fields: [betId], references: [id])
+  gameRound  GameRound @relation(fields: [roundId], references: [id])
+}
+
+// Novo modelo para armazenar o saldo da casa
+model HouseBalance {
+  id            String   @id @default(cuid())
+  gameType      String   @unique // "multiplicador"
+  balance       Float    @default(100000) // Saldo inicial: 100.000
+  profitMargin  Float    @default(5) // Margem de lucro em %
+  totalBets     Int      @default(0)
+  totalBetAmount Float   @default(0)
+  totalPayout   Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model ChatMessage {

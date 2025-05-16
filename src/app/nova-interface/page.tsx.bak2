@@ -286,7 +286,7 @@ export default function NovaInterface() {
     }
 
     return candles;
-  }, [lineHistory, timeProgress]);
+  }, [lineHistory, timeProgress, currentPhase]);
 
   // Atualizar o tamanho do gráfico com base na largura da janela
   useEffect(() => {
@@ -511,8 +511,6 @@ export default function NovaInterface() {
           console.log('Multiplicador atualizado para:', state.multiplier);
         } else {
           console.warn('Recebido multiplicador inválido:', state.multiplier);
-          // Definir um valor padrão quando o multiplicador for inválido
-          setCurrentMultiplier(INITIAL_MULTIPLIER);
         }
 
         setRoundId(state.roundId);
@@ -604,8 +602,6 @@ export default function NovaInterface() {
           }
         } else {
           console.warn('Recebido multiplicador inválido:', multiplier);
-          // Manter o multiplicador atual ou usar o valor inicial
-          // Não atualizar o histórico com valores inválidos
         }
       });
 
@@ -1137,7 +1133,7 @@ export default function NovaInterface() {
       console.error('Erro ao carregar dados de aposta do localStorage:', error);
       localStorage.removeItem('currentBet');
     }
-  }, [setMyBet, currentPhase, roundId]);
+  }, []);
 
   // Limpar a aposta salva apenas quando começar uma nova rodada
   useEffect(() => {
@@ -1389,61 +1385,114 @@ export default function NovaInterface() {
 
   // Inicializar o socket
   useEffect(() => {
+    // Inicializar o servidor Socket.IO se ainda não estiver inicializado
     if (!socketInitialized) {
-      // Inicializar o servidor Socket.IO primeiro
       initializeSocketServer();
-    } else if (!socket) {
-      console.log('Socket inicializado, configurando conexão...');
-      
-      try {
-        const socketInstance = getOrCreateSocketInstance();
-        socketRef.current = socketInstance;
-        setSocket(socketInstance);
-        setupSocketEvents(socketInstance);
-        
-        console.log('Socket configurado com sucesso.');
-        
-        // Verificar se o socket está conectado
-        if (!socketInstance.connected) {
-          console.log('Socket não conectado, aguardando conexão...');
-          
-          // Configurar timeout para verificar conexão
-          const connectionTimeout = setTimeout(() => {
-            if (socketInstance && !socketInstance.connected) {
-              console.warn('Timeout de conexão do socket atingido, tentando reconectar...');
-              reiniciarSocket();
-            }
-          }, 10000); // 10 segundos para conectar
-          
-          return () => clearTimeout(connectionTimeout);
-        }
-      } catch (error) {
-        console.error('Erro ao configurar socket:', error);
-        // Tentativa de recuperação automática
-        setTimeout(() => reiniciarSocket(), 5000);
-      }
     }
-    
-    // Configurar verificação periódica da conexão do socket
-    if (socket) {
-      console.log('Configurando verificação periódica de conexão do socket...');
-      const interval = setInterval(() => {
-        if (!socket.connected) {
-          console.warn('Socket desconectado detectado durante verificação periódica');
-          setIsReconnecting(true);
-          reiniciarSocket();
-        }
-      }, 30000); // Verificar a cada 30 segundos
-      
-      return () => {
-        clearInterval(interval);
+
+    return () => {
+      if (socketRef.current) {
         console.log('Desconectando socket ao desmontar componente');
-        if (socket) {
-          socket.disconnect();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setSocket(null);
+    };
+  }, [initializeSocketServer, socketInitialized]);
+
+  // Configurar socket após inicialização
+  useEffect(() => {
+    if (!socketInitialized) return;
+
+    console.log('Socket inicializado, configurando conexão...');
+
+    const socketInstance = getOrCreateSocketInstance();
+    socketRef.current = socketInstance;
+    setSocket(socketInstance);
+
+    setupSocketEvents(socketInstance);
+
+    console.log('Socket configurado com sucesso.');
+
+    // Solicitar estado do jogo após configuração
+    if (socketInstance.connected) {
+      console.log('Socket já conectado, solicitando estado do jogo');
+      socketInstance.emit('requestGameState');
+    } else {
+      console.log('Socket não conectado, aguardando conexão...');
+      socketInstance.connect();
+
+      // Definir um temporizador para verificar a conexão
+      const connectionTimer = setTimeout(() => {
+        if (!socketInstance.connected) {
+          console.warn(
+            'Socket não conectou dentro do tempo esperado, tentando reconectar...'
+          );
+          socketInstance.disconnect();
+          socketInstance.connect();
         }
-      };
+      }, 5000);
+
+      return () => clearTimeout(connectionTimer);
     }
-  }, [socketInitialized, socket, getOrCreateSocketInstance, setupSocketEvents, reiniciarSocket, initializeSocketServer]);
+
+    return () => {
+      // Não desconectar aqui para manter a conexão entre navegações
+    };
+  }, [socketInitialized, getOrCreateSocketInstance, setupSocketEvents]);
+
+  // Verificar periodicamente se o multiplicador está sendo atualizado
+  useEffect(() => {
+    if (currentPhase !== 'running') return;
+
+    let lastMultiplierUpdate = Date.now();
+    let staleCheckInterval: NodeJS.Timeout;
+
+    // Verificar se o multiplicador está sendo atualizado
+    staleCheckInterval = setInterval(() => {
+      const timeSinceLastUpdate = Date.now() - lastMultiplierUpdate;
+
+      // Se não houver atualização por mais de 5 segundos durante o jogo, tentar reconectar
+      if (timeSinceLastUpdate > 5000 && socketRef.current) {
+        console.warn(
+          'Multiplicador não atualizado por 5 segundos, reconectando...'
+        );
+
+        // Solicitar estado do jogo novamente
+        socketRef.current.emit('requestGameState');
+
+        // Atualizar timestamp para evitar múltiplas reconexões
+        lastMultiplierUpdate = Date.now();
+      }
+    }, 2000);
+
+    // Atualizar o timestamp sempre que o multiplicador mudar
+    if (typeof currentMultiplier === 'number' && !isNaN(currentMultiplier)) {
+      lastMultiplierUpdate = Date.now();
+    }
+
+    return () => {
+      clearInterval(staleCheckInterval);
+    };
+  }, [currentPhase, currentMultiplier]);
+
+  // Iniciar um intervalo para verificar a conexão periodicamente
+  useEffect(() => {
+    if (!socketInitialized || !socket) return;
+
+    console.log('Configurando verificação periódica de conexão do socket...');
+
+    const checkConnectionInterval = setInterval(() => {
+      if (socket && !socket.connected) {
+        console.log('Socket desconectado, tentando reconectar...');
+        socket.connect();
+      }
+    }, 10000); // Verificar a cada 10 segundos
+
+    return () => {
+      clearInterval(checkConnectionInterval);
+    };
+  }, [socket, socketInitialized]);
 
   // Calcular a cor do multiplicador com base no valor
   const getMultiplierColor = (multiplier: number | undefined) => {

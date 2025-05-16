@@ -1,1 +1,1 @@
-export { default } from './nova-interface/page'; 
+export { default } from './novo-jogo/page'; 

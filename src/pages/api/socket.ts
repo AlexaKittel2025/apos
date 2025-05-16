@@ -4,6 +4,13 @@ import type { Socket as NetSocket } from 'net';
 import type { Server as HTTPServer } from 'http';
 import type { NextApiResponse } from 'next';
 import { prisma } from '@/lib/prisma';
+import { 
+  BETTING_PHASE_DURATION, 
+  ROUND_DURATION, 
+  WIN_MULTIPLIER,
+  BetType,
+  RoundStatus
+} from '@/lib/game-constants';
 
 interface SocketServer extends HTTPServer {
   io?: Server | undefined;
@@ -42,10 +49,7 @@ interface GameState {
   endTime: number;
 }
 
-// Constantes de tempo
-const BETTING_PHASE_DURATION = 5000; // 5 segundos para apostas
-const ROUND_DURATION = 20000; // 20 segundos para a rodada em execução
-const WIN_MULTIPLIER = 1.8; // Multiplicador para ganhos (1.8x o valor apostado)
+// Constantes já importadas de @/lib/game-constants
 
 // Estado do jogo
 let gameState: GameState = {
@@ -86,7 +90,7 @@ const SocketHandler = async (req: NextApiRequest, res: NextApiResponseWithSocket
     upgradeTimeout: 10000,    // Tempo para tentar upgrade (ms)
     maxHttpBufferSize: 1e8,   // Aumentar tamanho do buffer
     connectTimeout: 45000,    // Tempo para estabelecer conexão (ms)
-    path: '/socket.io/',      // Caminho explícito
+    path: '/api/socket.io',   // Caminho atualizado para corresponder à configuração do cliente
     serveClient: false        // Não servir cliente
   });
   
@@ -366,45 +370,84 @@ const SocketHandler = async (req: NextApiRequest, res: NextApiResponseWithSocket
         
         // Processar apostas no banco de dados
         try {
-          // Buscar todas as apostas registradas para esta rodada
+          // Buscar todas as apostas registradas para esta rodada que estão PENDENTES
+          // Isso exclui apostas que já foram processadas via cash-out
           const betsInDB = await prisma.bet.findMany({
-            where: { roundId: gameState.roundId },
+            where: { 
+              roundId: gameState.roundId,
+              status: 'PENDING'  // Importante: processar apenas apostas pendentes
+            },
             include: { user: true }
           });
           
-          console.log(`Processando ${betsInDB.length} apostas para a rodada ${gameState.roundId}`);
+          console.log(`Processando ${betsInDB.length} apostas pendentes para a rodada ${gameState.roundId}`);
           
           // Para cada aposta, atualizar o resultado e o saldo do usuário
           for (const bet of betsInDB) {
             try {
+              // Verificar se há um cash-out associado a esta aposta
+              // @ts-ignore
+              const cashOut = await prisma.cashOut.findFirst({
+                where: { betId: bet.id }
+              });
+              
+              if (cashOut) {
+                console.log(`Aposta ${bet.id} já processada via cash-out, ignorando`);
+                continue; // Pular para a próxima aposta
+              }
+              
               // Determinar se a aposta foi vencedora
               const didWin = bet.type === winType;
               const betResult = didWin ? 'WIN' : 'LOSE';
               
-              // Atualizar o resultado da aposta
-              await prisma.bet.update({
-                where: { id: bet.id },
-                data: { result: betResult }
-              });
-              
-              // Se ganhou, atualizar o saldo do usuário com o multiplicador correto
-              if (didWin) {
-                // Calcular valor ganho com o multiplicador definido
-                const winAmount = parseFloat((bet.amount * WIN_MULTIPLIER).toFixed(2));
-                
-                console.log(`Aplicando ganho: Aposta ${bet.amount} x ${WIN_MULTIPLIER} = ${winAmount}`);
-                
-                await prisma.user.update({
-                  where: { id: bet.userId },
-                  data: {
-                    balance: {
-                      increment: winAmount
-                    }
+              // Usar uma transação para garantir a consistência
+              await prisma.$transaction(async (tx) => {
+                // Atualizar o resultado da aposta
+                await tx.bet.update({
+                  where: { id: bet.id },
+                  data: { 
+                    status: 'COMPLETED',
+                    result: betResult,
+                    completedAt: new Date()
                   }
                 });
                 
-                console.log(`Usuário ${bet.userId} ganhou R$ ${winAmount.toFixed(2)} com a aposta ${bet.id}`);
-              }
+                // Se ganhou, atualizar o saldo do usuário com o multiplicador correto
+                if (didWin) {
+                  // Calcular valor ganho com o multiplicador definido
+                  const winAmount = parseFloat((bet.amount * WIN_MULTIPLIER).toFixed(2));
+                  
+                  console.log(`Aplicando ganho: Aposta ${bet.amount} x ${WIN_MULTIPLIER} = ${winAmount}`);
+                  
+                  await tx.user.update({
+                    where: { id: bet.userId },
+                    data: {
+                      balance: {
+                        increment: winAmount
+                      }
+                    }
+                  });
+                  
+                  // Registrar o ganho como transação para melhor rastreabilidade
+                  await tx.transaction.create({
+                    data: {
+                      userId: bet.userId,
+                      amount: winAmount,
+                      type: 'DEPOSIT',
+                      status: 'COMPLETED',
+                      details: JSON.stringify({
+                        description: 'Ganho em jogo',
+                        gameType: 'multiplicador',
+                        roundId: gameState.roundId,
+                        betId: bet.id,
+                        multiplier: WIN_MULTIPLIER
+                      })
+                    }
+                  });
+                  
+                  console.log(`Usuário ${bet.userId} ganhou R$ ${winAmount.toFixed(2)} com a aposta ${bet.id}`);
+                }
+              });
             } catch (betUpdateError) {
               console.error(`Erro ao processar aposta ${bet.id}:`, betUpdateError);
               // Continuar processando outras apostas

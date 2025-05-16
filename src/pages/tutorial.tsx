@@ -92,7 +92,7 @@ export default function TutorialPage() {
               <div>
                 <h4 className="font-medium">Escolha sua Direção</h4>
                 <p className="text-sm text-gray-300">
-                  Selecione "Acima" se você acha que o valor final será maior, ou "Abaixo" se acha que 
+                  Selecione &quot;Acima&quot; se você acha que o valor final será maior, ou &quot;Abaixo&quot; se acha que 
                   será menor. Sua previsão é sobre para onde o valor irá no final da rodada.
                 </p>
               </div>
@@ -118,7 +118,7 @@ export default function TutorialPage() {
               <div>
                 <h4 className="font-medium">Confirme a Aposta</h4>
                 <p className="text-sm text-gray-300">
-                  Clique em "Fazer Aposta" para confirmar. Sua aposta será registrada e você 
+                  Clique em &quot;Fazer Aposta&quot; para confirmar. Sua aposta será registrada e você 
                   poderá ver o resultado ao final da rodada. Você pode fazer apenas uma aposta por rodada.
                 </p>
               </div>
@@ -135,7 +135,7 @@ export default function TutorialPage() {
               <h4 className="font-medium mb-2">Como são determinados os resultados?</h4>
               <p className="text-sm text-gray-300">
                 Ao final de cada rodada, o sistema determina um valor final. Se o valor estiver 
-                abaixo de 50, o resultado é "Acima". Se estiver acima de 50, o resultado é "Abaixo". 
+                abaixo de 50, o resultado é &quot;Acima&quot;. Se estiver acima de 50, o resultado é &quot;Abaixo&quot;. 
                 O jogo é totalmente transparente e os resultados são gerados aleatoriamente.
               </p>
             </div>
