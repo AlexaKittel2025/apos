@@ -48,7 +48,7 @@ export default function Login() {
           <div className="flex justify-center mb-4">
             <div style={{ position: 'relative', width: '180px', height: '180px' }}>
               <Image
-                src="/imagens/logo.png"
+                src="/images/logo.png"
                 alt="Logo Din-Din"
                 fill
                 sizes="180px"

@@ -75,7 +75,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.0,
       dailyBonus: 0,
       description: 'Bem-vindo ao jogo! Comece sua jornada.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 2,
@@ -85,7 +85,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.1,
       dailyBonus: 5,
       description: 'Seus primeiros passos foram dados. Continue apostando!',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 3,
@@ -95,7 +95,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.2,
       dailyBonus: 10,
       description: 'Você está pegando o jeito!',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 4,
@@ -105,7 +105,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.3,
       dailyBonus: 15,
       description: 'Um competidor nato. Suas habilidades estão melhorando.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 5,
@@ -115,7 +115,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.4,
       dailyBonus: 20,
       description: 'Um especialista no jogo. Suas apostas são mais certeiras.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 6,
@@ -125,7 +125,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.5,
       dailyBonus: 25,
       description: 'Alcançou o nível Prata! Bônus especiais desbloqueados.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 7,
@@ -135,7 +135,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.6,
       dailyBonus: 40,
       description: 'Um jogador de Ouro! Seu prestígio é notável.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 8,
@@ -145,7 +145,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.7,
       dailyBonus: 60,
       description: 'Nível Platina alcançado! Poucos chegam tão longe.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 9,
@@ -155,7 +155,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 1.8,
       dailyBonus: 90,
       description: 'Um diamante entre jogadores! Acesso a recompensas exclusivas.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
     {
       level: 10,
@@ -165,7 +165,7 @@ export async function initializeLevelSystem(): Promise<number> {
       loyaltyMultiplier: 2.0,
       dailyBonus: 150,
       description: 'Você atingiu a maestria! O melhor dos melhores.',
-      icon: '/imagens/levels/default.png',
+      icon: '/images/levels/default.png',
     },
   ];
 
@@ -193,7 +193,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 100,
       type: 'FREE_BET',
       value: 5,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 1
     },
@@ -203,7 +203,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 350,
       type: 'FREE_BET',
       value: 20,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 3
     },
@@ -213,7 +213,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 800,
       type: 'FREE_BET',
       value: 50,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 5
     },
@@ -223,7 +223,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 200,
       type: 'MULTIPLIER_BOOST',
       value: 0.03,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 2
     },
@@ -233,7 +233,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 400,
       type: 'MULTIPLIER_BOOST',
       value: 0.05,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 4
     },
@@ -243,7 +243,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 1000,
       type: 'MULTIPLIER_BOOST',
       value: 0.1,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 7
     },
@@ -253,7 +253,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 500,
       type: 'CASH_BONUS',
       value: 10,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 2
     },
@@ -263,7 +263,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 2000,
       type: 'CASH_BONUS',
       value: 50,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 5
     },
@@ -273,7 +273,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 3500,
       type: 'CASH_BONUS',
       value: 100,
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 8
     },
@@ -283,7 +283,7 @@ export async function initializeLevelSystem(): Promise<number> {
       pointsCost: 300,
       type: 'DAILY_LIMIT_BOOST',
       value: 0.5, // +50%
-      icon: '/imagens/rewards/default.png',
+      icon: '/images/rewards/default.png',
       isActive: true,
       minimumLevel: 3
     }

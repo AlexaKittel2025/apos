@@ -531,7 +531,7 @@ export default function LevelPage() {
                   {currentLevel?.icon && (
                     <div className="w-16 h-16 rounded-full bg-[#2a2a2a] flex items-center justify-center overflow-hidden">
                       <img 
-                        src={currentLevel?.icon || '/imagens/levels/default.png'} 
+                        src={currentLevel?.icon || '/images/levels/default.png'} 
                         alt={`Nível ${currentLevel?.level || '?'}`} 
                         className="w-full h-full object-cover"
                         onError={(e) => {

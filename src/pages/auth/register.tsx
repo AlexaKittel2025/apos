@@ -58,7 +58,7 @@ export default function Register() {
         <div className="text-center">
           <div className="flex justify-center mb-4">
             <Image
-              src="/imagens/logo.png"
+              src="/images/logo.png"
               alt="Logo Din-Din"
               width={180}
               height={180}

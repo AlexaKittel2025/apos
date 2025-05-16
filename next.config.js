@@ -47,9 +47,29 @@ const nextConfig = {
     ];
   },
   
-  // Redirecionamento para HTTPS em produção
+  // Redirecionamentos
   async redirects() {
-    return process.env.NODE_ENV === 'production'
+    // Redirecionamentos básicos para compatibilidade
+    const compatibilityRedirects = [
+      {
+        source: '/imagens/:path*',
+        destination: '/images/:path*',
+        permanent: true,
+      },
+      {
+        source: '/app/nova-interface/:path*',
+        destination: '/app/new-interface/:path*',
+        permanent: false,
+      },
+      {
+        source: '/app/novo-jogo/:path*',
+        destination: '/app/new-game/:path*',
+        permanent: false,
+      },
+    ];
+    
+    // Redirecionamento HTTPS em produção
+    const httpsRedirects = process.env.NODE_ENV === 'production'
       ? [
           {
             source: '/:path*',
@@ -64,6 +84,8 @@ const nextConfig = {
           },
         ]
       : [];
+      
+    return [...compatibilityRedirects, ...httpsRedirects];
   },
   
   // Aumentar timeout para operações longas

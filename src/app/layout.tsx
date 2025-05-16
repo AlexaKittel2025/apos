@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: 'din-din',
   description: 'Plataforma financeira digital',
   icons: {
-    icon: '/imagens/favi.png',
+    icon: '/images/favi.png',
   },
 }
 

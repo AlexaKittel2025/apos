@@ -46,7 +46,7 @@ export default function Maintenance({ plannedEndTime, title, message, showButton
           <div className="flex justify-center mb-6">
             <div className="relative w-36 h-36">
               <Image 
-                src="/imagens/logo.png" 
+                src="/images/logo.png" 
                 alt="Logo Din-Din"
                 fill
                 sizes="144px"
